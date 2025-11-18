@@ -1,19 +1,8 @@
 # Godantic
 
-Pydantic-inspired validation and schema generation for Go. Define validation rules as methods, get type-safe constraints with generics, and automatically generate JSON Schemas — all without struct tags.
+**Validation and schema generation in one place.** Inspired by Python's Pydantic, Godantic brings type-safe validation and automatic JSON Schema generation to Go — without struct tags.
 
-```bash
-go get github.com/deepankarm/godantic
-```
-
-## Why Godantic?
-
-**Validation and schema generation in one place.** Most Go libraries require separate tools for validation (e.g., `go-playground/validator`) and schema generation (e.g., custom JSON Schema libraries), often using struct tags for both. This creates:
-- **Duplication**: Same rules defined twice
-- **Limited flexibility**: Tags can't express complex logic
-- **Testing challenges**: Hard to unit test validation logic in tags
-
-**Godantic solves this** by defining both validation and schema metadata in `Field{FieldName}()` methods:
+Most Go validation libraries use struct tags, requiring separate tools for validation and schema generation. This creates duplication, limits flexibility, and makes testing difficult. Godantic solves this by defining both validation and schema in `Field{FieldName}()` methods:
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
@@ -25,19 +14,21 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 }
 ```
 
-This approach gives you:
-- **Single source of truth** - validation and schema from the same definition
-- **Full Go power** - use conditionals, custom functions, external dependencies
-- **Type-safe** - generics catch errors at compile time
-- **Testable** - unit test your validation logic like any Go function
-- **No tag parsing** - pure Go code, easier to debug and refactor
+**Benefits:**
+- Single source of truth for validation + schema
+- Full Go language power (conditionals, custom functions, external calls)
+- Type-safe with generics (compile-time checks)
+- Testable validation logic
+- No tag parsing, easier debugging
 
-Inspired by Python's Pydantic, adapted to Go idioms.
+```bash
+go get github.com/deepankarm/godantic
+```
 
 ## Quick Start
 
 ```go
-import "github.com/deepankarm/godantic/pkg/godantic"
+import "github.com/deepankarm/godantic"
 
 type User struct {
     Email    string
@@ -123,7 +114,7 @@ func (u *User) FieldPassword() godantic.FieldOptions[string] {
 Generate JSON Schema without struct tags:
 
 ```go
-import "github.com/deepankarm/godantic/pkg/godantic/schema"
+import "github.com/deepankarm/godantic/schema"
 
 sg := schema.NewGenerator[User]()
 s, err := sg.Generate()
