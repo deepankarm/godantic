@@ -112,13 +112,11 @@ func (u *User) FieldPassword() godantic.FieldOptions[string] {
 
 ### Union Types
 
-Support for unions and discriminated unions with flexible type definitions:
+#### Simple Union
+
+Simple union with primitive types. This generates a `anyOf` schema with the given types.
 
 ```go
-// 1. Union - accepts both primitive type names (strings) and complex Go types
-//    Primitive types: "string", "integer", "number", "boolean", "object", "array", "null"
-
-// Simple primitive union
 type Config struct {
     Value any  // Can be string, integer, or object
 }
@@ -129,8 +127,13 @@ func (c *Config) FieldValue() godantic.FieldOptions[any] {
         godantic.Description[any]("Can be a string, number, or object"),
     )
 }
+```
 
-// Union with complex types (structs, slices)
+#### Complex Union
+
+Union with complex types (structs, slices). This generates a `anyOf` schema with the given types.
+
+```go
 type QueryPayload struct {
     Query any  // Can be string or []TextInput or []ImageInput
 }
@@ -154,7 +157,13 @@ func (m *MixedData) FieldData() godantic.FieldOptions[any] {
     )
 }
 
-// 2. DiscriminatedUnion - type determined by discriminator field
+```
+
+#### Discriminated Union
+
+Discriminated union with discriminator field (type determined by discriminator field). This generates a `oneOf` schema with a discriminator field.
+
+```go
 type Response struct {
     Animal any  // Can be Cat, Dog, or Bird
 }
@@ -169,8 +178,6 @@ func (r *Response) FieldAnimal() godantic.FieldOptions[any] {
     )
 }
 ```
-
-All generate proper `anyOf` or `oneOf` with references in JSON Schema.
 
 ### JSON Schema Generation
 
