@@ -1,10 +1,38 @@
 # Godantic
 
-Go validation library inspired by Python's Pydantic, with type-safe constraints and automatic JSON Schema generation.
+Pydantic-inspired validation and schema generation for Go. Define validation rules as methods, get type-safe constraints with generics, and automatically generate JSON Schemas — all without struct tags.
 
 ```bash
 go get github.com/deepankarm/godantic
 ```
+
+## Why Godantic?
+
+**Validation and schema generation in one place.** Most Go libraries require separate tools for validation (e.g., `go-playground/validator`) and schema generation (e.g., custom JSON Schema libraries), often using struct tags for both. This creates:
+- **Duplication**: Same rules defined twice
+- **Limited flexibility**: Tags can't express complex logic
+- **Testing challenges**: Hard to unit test validation logic in tags
+
+**Godantic solves this** by defining both validation and schema metadata in `Field{FieldName}()` methods:
+
+```go
+func (u *User) FieldEmail() godantic.FieldOptions[string] {
+    return godantic.WithFieldOptions(
+        godantic.Required[string](),
+        godantic.Email(),
+        godantic.Description[string]("Primary contact email"),
+    )
+}
+```
+
+This approach gives you:
+- **Single source of truth** - validation and schema from the same definition
+- **Full Go power** - use conditionals, custom functions, external dependencies
+- **Type-safe** - generics catch errors at compile time
+- **Testable** - unit test your validation logic like any Go function
+- **No tag parsing** - pure Go code, easier to debug and refactor
+
+Inspired by Python's Pydantic, adapted to Go idioms.
 
 ## Quick Start
 
@@ -46,17 +74,6 @@ errs := validator.Validate(&user)
 ```
 
 ## Features
-
-### Native Go Types
-
-No wrapper types needed - use regular `string`, `int`, pointers, etc.
-
-```go
-type User struct {
-    Email string  // Not Field[string]!
-    Age   int
-}
-```
 
 ### Type-Safe Constraints
 
@@ -132,22 +149,17 @@ type Company struct {
 
 ## Available Constraints
 
-### Required Fields
 ```go
-godantic.Required[T]()
-```
+godantic.Required[T]()              // required field
 
-### Numeric
-```go
+// numeric constraints
 godantic.Min(value)                 // value >= min
 godantic.Max(value)                 // value <= max
 godantic.ExclusiveMin(value)        // value > min
 godantic.ExclusiveMax(value)        // value < max
 godantic.MultipleOf(value)          // value is multiple of
-```
 
-### String
-```go
+// string constraints
 godantic.MinLen(length)             // minimum length
 godantic.MaxLen(length)             // maximum length
 godantic.Regex(pattern)             // regex pattern match
@@ -155,30 +167,22 @@ godantic.Email()                    // email format
 godantic.URL()                      // URL format
 godantic.ContentEncoding(encoding)  // e.g., "base64"
 godantic.ContentMediaType(type)     // e.g., "application/json"
-```
 
-### Arrays/Slices
-```go
+// array/slice constraints
 godantic.MinItems[T](count)         // minimum number of items
 godantic.MaxItems[T](count)         // maximum number of items
 godantic.UniqueItems[T]()           // all items must be unique
-```
 
-### Maps/Objects
-```go
+// map/object constraints
 godantic.MinProperties(count)       // minimum properties
 godantic.MaxProperties(count)       // maximum properties
-```
 
-### Value Constraints
-```go
+// value constraints
 godantic.OneOf(value1, value2, ...) // enum - one of allowed values
 godantic.Const(value)               // must equal exactly this value
 godantic.Default(value)             // default value (schema only)
-```
 
-### Schema Metadata
-```go
+// schema metadata
 godantic.Description[T](text)       // field description
 godantic.Example(value)             // example value
 godantic.Title[T](text)             // field title
@@ -196,7 +200,7 @@ godantic.Validate(func(val T) error {
 })
 ```
 
-## How It Works
+## How it works
 
 1. Define `Field{FieldName}()` methods that return `FieldOptions[T]`
 2. Use `WithFieldOptions()` to compose validation constraints
@@ -211,16 +215,14 @@ Zero values (empty string, 0, nil) are treated as "not set" for required field c
 
 ```go
 validator := godantic.NewValidator[User]()
-
 user := User{
     Email:    "test@example.com",
     Username: "john_doe",
     Age:      25,
 }
-
 if errs := validator.Validate(&user); len(errs) > 0 {
     for _, err := range errs {
-        fmt.Println(err)
+        // handle error
     }
 }
 ```
@@ -244,42 +246,11 @@ func (u *User) FieldName() godantic.FieldOptions[string] {
 }
 
 sg := schema.NewGenerator[User]()
-jsonSchema, _ := sg.GenerateJSON()
-// Use with LLMs, API docs, etc.
+jsonSchema, err := sg.GenerateJSON()
 ```
 
 ## Testing
 
 ```bash
-# Run all tests
-go test ./... -v
-
-# Run with coverage
-go test ./... -cover
-
-# Run specific package tests
-go test ./pkg/godantic -v
-go test ./pkg/godantic/schema -v
+go test ./... -v -cover
 ```
-
-## Comparison with Pydantic
-
-| Feature | Pydantic (Python) | Godantic (Go) |
-|---------|-------------------|---------------|
-| Native types | Yes | Yes |
-| Type safety | Runtime | Compile-time (generics) |
-| Validation | Field descriptors | `Field{Name}()` methods |
-| Required fields | `Field(...)` | `Required[T]()` |
-| Schema generation | Built-in | Built-in (no tags) |
-
-## Development
-
-Run the example:
-```bash
-go run ./cmd
-```
-
-The library uses:
-- Go generics for type safety
-- Reflection for field discovery
-- Convention-based method naming (`Field{Name}()`)
