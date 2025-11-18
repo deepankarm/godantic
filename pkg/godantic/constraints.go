@@ -415,20 +415,58 @@ func ContentMediaType(mediaType string) func(FieldOptions[string]) FieldOptions[
 }
 
 // Union creates a union type that accepts multiple types (anyOf in JSON Schema)
-// For fields of type `any` that can be one of several types.
-// Example: Union[any]("string", "integer", "object")
-func Union[T any](allowedTypes ...string) func(FieldOptions[T]) FieldOptions[T] {
+// Supports both JSON Schema primitive type names (strings) and complex Go types.
+//
+// For primitive types, use type name strings:
+//   - "string", "integer", "number", "boolean", "object", "array", "null"
+//
+// For complex types, pass type instances:
+//   - Union[any]("string", []TextInput{}, []ImageInput{})
+//   - Union[any](0, "text", MyStruct{})
+//
+// Examples:
+//
+//	Union[any]("string", "integer", "object")                    // primitives only
+//	Union[any]("", []TextInput{}, []ImageInput{})               // string + complex types
+//	Union[any](0, 1.5, true)                                     // mix of primitives via instances
+func Union[T any](types ...any) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
 		if fo.Constraints_ == nil {
 			fo.Constraints_ = make(map[string]any)
 		}
 
-		// Store anyOf for schema generation
-		anyOfSchemas := make([]map[string]string, len(allowedTypes))
-		for i, typeName := range allowedTypes {
-			anyOfSchemas[i] = map[string]string{"type": typeName}
+		// Separate string type names from complex type instances
+		var primitiveTypes []string
+		var complexTypes []any
+
+		for _, t := range types {
+			if typeName, ok := t.(string); ok {
+				// String arguments are treated as JSON Schema type names
+				if typeName != "" {
+					primitiveTypes = append(primitiveTypes, typeName)
+				} else {
+					// Empty string means we want the string type itself
+					complexTypes = append(complexTypes, t)
+				}
+			} else {
+				// Non-string arguments are complex types to be reflected
+				complexTypes = append(complexTypes, t)
+			}
 		}
-		fo.Constraints_[ConstraintAnyOf] = anyOfSchemas
+
+		// Store primitive type names for simple schema generation
+		if len(primitiveTypes) > 0 {
+			anyOfSchemas := make([]map[string]string, len(primitiveTypes))
+			for i, typeName := range primitiveTypes {
+				anyOfSchemas[i] = map[string]string{"type": typeName}
+			}
+			fo.Constraints_[ConstraintAnyOf] = anyOfSchemas
+		}
+
+		// Store complex types for reflection during schema generation
+		if len(complexTypes) > 0 {
+			fo.Constraints_["anyOfTypes"] = complexTypes
+		}
 
 		return fo
 	}

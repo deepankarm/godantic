@@ -112,12 +112,15 @@ func (u *User) FieldPassword() godantic.FieldOptions[string] {
 
 ### Union Types
 
-Support for both simple unions (anyOf) and discriminated unions (oneOf):
+Support for unions and discriminated unions with flexible type definitions:
 
 ```go
-// Simple Union - field can be multiple types
+// 1. Union - accepts both primitive type names (strings) and complex Go types
+//    Primitive types: "string", "integer", "number", "boolean", "object", "array", "null"
+
+// Simple primitive union
 type Config struct {
-    Value any  // Can be string, int, or object
+    Value any  // Can be string, integer, or object
 }
 
 func (c *Config) FieldValue() godantic.FieldOptions[any] {
@@ -127,10 +130,36 @@ func (c *Config) FieldValue() godantic.FieldOptions[any] {
     )
 }
 
-// Discriminated Union - type determined by discriminator field
-type Animal any  // Can be Cat, Dog, or Bird
+// Union with complex types (structs, slices)
+type QueryPayload struct {
+    Query any  // Can be string or []TextInput or []ImageInput
+}
 
-func (a *Response) FieldAnimal() godantic.FieldOptions[any] {
+func (q *QueryPayload) FieldQuery() godantic.FieldOptions[any] {
+    return godantic.Field(
+        godantic.Union[any]("", []TextInput{}, []ImageInput{}),  // "" = string type
+        godantic.Description[any]("Query can be string or array of inputs"),
+    )
+}
+
+// Mix primitive and complex types
+type MixedData struct {
+    Data any  // Can be string, integer, or []CustomStruct
+}
+
+func (m *MixedData) FieldData() godantic.FieldOptions[any] {
+    return godantic.Field(
+        godantic.Union[any]("string", "integer", []CustomStruct{}),
+        godantic.Description[any]("Flexible data field"),
+    )
+}
+
+// 2. DiscriminatedUnion - type determined by discriminator field
+type Response struct {
+    Animal any  // Can be Cat, Dog, or Bird
+}
+
+func (r *Response) FieldAnimal() godantic.FieldOptions[any] {
     return godantic.Field(
         godantic.DiscriminatedUnion[any]("type", map[string]any{
             "cat":  Cat{},
@@ -141,7 +170,7 @@ func (a *Response) FieldAnimal() godantic.FieldOptions[any] {
 }
 ```
 
-This generates proper `anyOf` or `oneOf` with discriminator in JSON Schema.
+All generate proper `anyOf` or `oneOf` with references in JSON Schema.
 
 ### JSON Schema Generation
 

@@ -76,6 +76,8 @@ type fieldOption interface {
 func (g *Generator[T]) reflectUnionVariants(schema *jsonschema.Schema, fieldOptions map[string]any) {
 	for _, optsAny := range fieldOptions {
 		opts := optsAny.(fieldOption)
+
+		// Handle DiscriminatedUnion variants
 		if discriminator, ok := opts.Constraints()[godantic.ConstraintDiscriminator].(map[string]any); ok {
 			if mapping, ok := discriminator["mapping"].(map[string]any); ok {
 				// Reflect each variant type and add to schema definitions
@@ -84,7 +86,38 @@ func (g *Generator[T]) reflectUnionVariants(schema *jsonschema.Schema, fieldOpti
 				}
 			}
 		}
+
+		// Handle UnionOf complex types
+		if anyOfTypes, ok := opts.Constraints()["anyOfTypes"]; ok {
+			if types, ok := anyOfTypes.([]any); ok {
+				for _, typeInstance := range types {
+					g.reflectUnionOfType(schema, typeInstance)
+				}
+			}
+		}
 	}
+}
+
+// reflectUnionOfType reflects types from UnionOf and adds them to schema definitions
+func (g *Generator[T]) reflectUnionOfType(schema *jsonschema.Schema, typeInstance any) {
+	t := reflect.TypeOf(typeInstance)
+	if t == nil {
+		return
+	}
+
+	// Handle slices/arrays - reflect the element type
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		elemType := t.Elem()
+		if elemType.Kind() == reflect.Struct {
+			// Reflect the struct type
+			elemInstance := reflect.New(elemType).Elem().Interface()
+			g.reflectVariantType(schema, elemInstance)
+		}
+	} else if t.Kind() == reflect.Struct {
+		// Directly reflect struct types
+		g.reflectVariantType(schema, typeInstance)
+	}
+	// Primitives and maps don't need definition reflection
 }
 
 // reflectVariantType reflects a single variant type and adds it to the schema
@@ -301,17 +334,35 @@ func applyValueConstraints(prop *jsonschema.Schema, constraints map[string]any) 
 
 // applyUnionConstraints applies union constraints (anyOf, oneOf with discriminator)
 func applyUnionConstraints(prop *jsonschema.Schema, constraints map[string]any) {
-	// Handle Union (anyOf)
+	// Collect all anyOf schemas (both primitive and complex types)
+	var allSchemas []*jsonschema.Schema
+
+	// Handle primitive type names (from string arguments)
 	if anyOf, ok := constraints[godantic.ConstraintAnyOf]; ok {
 		if anyOfSlice, ok := anyOf.([]map[string]string); ok {
-			schemas := make([]*jsonschema.Schema, len(anyOfSlice))
-			for i, typeMap := range anyOfSlice {
-				schemas[i] = &jsonschema.Schema{
+			for _, typeMap := range anyOfSlice {
+				allSchemas = append(allSchemas, &jsonschema.Schema{
 					Type: typeMap["type"],
+				})
+			}
+		}
+	}
+
+	// Handle complex Go types (from non-string arguments)
+	if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
+		if types, ok := anyOfTypes.([]any); ok {
+			for _, typeInstance := range types {
+				schema := createSchemaForType(typeInstance)
+				if schema != nil {
+					allSchemas = append(allSchemas, schema)
 				}
 			}
-			prop.AnyOf = schemas
 		}
+	}
+
+	// Set the combined anyOf if we have any schemas
+	if len(allSchemas) > 0 {
+		prop.AnyOf = allSchemas
 	}
 
 	// Handle DiscriminatedUnion (oneOf with discriminator)
@@ -344,6 +395,84 @@ func applyUnionConstraints(prop *jsonschema.Schema, constraints map[string]any) 
 				"propertyName": propertyName,
 			}
 		}
+	}
+}
+
+// createSchemaForType creates a JSON Schema for a given Go type instance
+func createSchemaForType(typeInstance any) *jsonschema.Schema {
+	t := reflect.TypeOf(typeInstance)
+	if t == nil {
+		return nil
+	}
+
+	// Handle different kinds of types
+	switch t.Kind() {
+	case reflect.String:
+		return &jsonschema.Schema{Type: "string"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return &jsonschema.Schema{Type: "integer"}
+	case reflect.Float32, reflect.Float64:
+		return &jsonschema.Schema{Type: "number"}
+	case reflect.Bool:
+		return &jsonschema.Schema{Type: "boolean"}
+	case reflect.Slice, reflect.Array:
+		// For slices/arrays, we need to create an array schema with items
+		elemType := t.Elem()
+		itemSchema := createSchemaForTypeReflect(elemType)
+		return &jsonschema.Schema{
+			Type:  "array",
+			Items: itemSchema,
+		}
+	case reflect.Map:
+		return &jsonschema.Schema{Type: "object"}
+	case reflect.Struct:
+		// For structs, create a reference to a definition
+		return &jsonschema.Schema{
+			Ref: fmt.Sprintf("#/$defs/%s", t.Name()),
+		}
+	case reflect.Pointer:
+		// Dereference pointer and recurse
+		return createSchemaForTypeReflect(t.Elem())
+	default:
+		// Fallback to any
+		return &jsonschema.Schema{}
+	}
+}
+
+// createSchemaForTypeReflect creates a JSON Schema from a reflect.Type
+func createSchemaForTypeReflect(t reflect.Type) *jsonschema.Schema {
+	if t == nil {
+		return nil
+	}
+
+	switch t.Kind() {
+	case reflect.String:
+		return &jsonschema.Schema{Type: "string"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return &jsonschema.Schema{Type: "integer"}
+	case reflect.Float32, reflect.Float64:
+		return &jsonschema.Schema{Type: "number"}
+	case reflect.Bool:
+		return &jsonschema.Schema{Type: "boolean"}
+	case reflect.Slice, reflect.Array:
+		elemType := t.Elem()
+		itemSchema := createSchemaForTypeReflect(elemType)
+		return &jsonschema.Schema{
+			Type:  "array",
+			Items: itemSchema,
+		}
+	case reflect.Map:
+		return &jsonschema.Schema{Type: "object"}
+	case reflect.Struct:
+		return &jsonschema.Schema{
+			Ref: fmt.Sprintf("#/$defs/%s", t.Name()),
+		}
+	case reflect.Pointer:
+		return createSchemaForTypeReflect(t.Elem())
+	default:
+		return &jsonschema.Schema{}
 	}
 }
 
