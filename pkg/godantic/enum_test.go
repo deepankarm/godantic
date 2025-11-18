@@ -30,9 +30,7 @@ type Task struct {
 }
 
 func (t *Task) FieldName() godantic.FieldOptions[string] {
-	return godantic.Field(
-		godantic.Required[string](),
-	)
+	return godantic.Field(godantic.Required[string]())
 }
 
 func TestEnums(t *testing.T) {

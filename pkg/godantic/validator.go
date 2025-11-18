@@ -1,6 +1,7 @@
 package godantic
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
@@ -201,8 +202,11 @@ func (v *Validator[T]) Validate(obj *T) []error {
 
 		// Check for required fields (zero value check)
 		if opts.required && field.IsZero() {
-			errs = append(errs, fmt.Errorf("%s: required field", fieldName))
-			continue
+			// If field has a default value, it's not an error (will be applied via ApplyDefaults)
+			if _, hasDefault := opts.constraints[ConstraintDefault]; !hasDefault {
+				errs = append(errs, fmt.Errorf("%s: required field", fieldName))
+				continue
+			}
 		}
 
 		// Skip validation for optional fields with zero values
@@ -219,6 +223,68 @@ func (v *Validator[T]) Validate(obj *T) []error {
 	}
 
 	return errs
+}
+
+// ApplyDefaults applies default values to zero-valued fields that have defaults defined.
+// This should be called after JSON unmarshaling to set defaults for missing fields.
+// Returns an error if reflection fails.
+func (v *Validator[T]) ApplyDefaults(obj *T) error {
+	val := reflect.ValueOf(obj).Elem()
+
+	for fieldName, opts := range v.fieldOptions {
+		field := val.FieldByName(fieldName)
+		if !field.IsValid() {
+			continue
+		}
+
+		// Only apply default if field is zero value
+		if !field.IsZero() {
+			continue
+		}
+
+		// Check if field can be set
+		if !field.CanSet() {
+			continue
+		}
+
+		// Get default from constraints
+		defaultVal, ok := opts.constraints[ConstraintDefault]
+		if !ok {
+			continue
+		}
+
+		// Set the default value
+		defaultReflect := reflect.ValueOf(defaultVal)
+		if defaultReflect.Type().AssignableTo(field.Type()) {
+			field.Set(defaultReflect)
+		}
+	}
+
+	return nil
+}
+
+// ValidateJSON unmarshals JSON data, applies defaults, and validates.
+// This is a convenience method that combines the three common steps:
+// 1. Unmarshal JSON into the struct
+// 2. Apply default values to zero-valued fields
+// 3. Validate the struct
+// Returns the populated struct and any validation errors.
+func (v *Validator[T]) ValidateJSON(data []byte) (*T, []error) {
+	var obj T
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, []error{fmt.Errorf("json unmarshal failed: %w", err)}
+	}
+
+	if err := v.ApplyDefaults(&obj); err != nil {
+		return nil, []error{fmt.Errorf("apply defaults failed: %w", err)}
+	}
+
+	errs := v.Validate(&obj)
+	if len(errs) > 0 {
+		return &obj, errs
+	}
+
+	return &obj, nil
 }
 
 // FieldOptions returns the field options map (for schema generation)
