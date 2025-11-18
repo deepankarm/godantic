@@ -17,7 +17,7 @@ go get github.com/deepankarm/godantic
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
-    return godantic.WithFieldOptions(
+    return godantic.Field(
         godantic.Required[string](),
         godantic.Email(),
         godantic.Description[string]("Primary contact email"),
@@ -47,21 +47,21 @@ type User struct {
 
 // Define validation rules
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
-    return godantic.WithFieldOptions(
+    return godantic.Field(
         godantic.Required[string](),
         godantic.Email(),
     )
 }
 
 func (u *User) FieldAge() godantic.FieldOptions[int] {
-    return godantic.WithFieldOptions(
+    return godantic.Field(
         godantic.Min(0),
         godantic.Max(130),
     )
 }
 
 func (u *User) FieldUsername() godantic.FieldOptions[string] {
-    return godantic.WithFieldOptions(
+    return godantic.Field(
         godantic.Required[string](),
         godantic.MinLen(3),
         godantic.MaxLen(20),
@@ -79,14 +79,14 @@ errs := validator.Validate(&user)
 
 ```go
 // Numeric constraints
-godantic.WithFieldOptions(
+godantic.Field(
     godantic.Min(0),
     godantic.Max(100),
     godantic.MultipleOf(5),
 )
 
 // String constraints
-godantic.WithFieldOptions(
+godantic.Field(
     godantic.MinLen(3),
     godantic.MaxLen(20),
     godantic.Regex("^[a-zA-Z0-9]+$"),
@@ -95,7 +95,7 @@ godantic.WithFieldOptions(
 )
 
 // Enum validation
-godantic.WithFieldOptions(
+godantic.Field(
     godantic.OneOf("active", "inactive", "pending"),
 )
 ```
@@ -104,7 +104,7 @@ godantic.WithFieldOptions(
 
 ```go
 func (u *User) FieldPassword() godantic.FieldOptions[string] {
-    return godantic.WithFieldOptions(
+    return godantic.Field(
         godantic.Required[string](),
         godantic.MinLen(8),
         godantic.Validate(func(password string) error {
@@ -203,7 +203,7 @@ godantic.Validate(func(val T) error {
 ## How it works
 
 1. Define `Field{FieldName}()` methods that return `FieldOptions[T]`
-2. Use `WithFieldOptions()` to compose validation constraints
+2. Use `Field()` to compose validation constraints
 3. Create a `Validator[T]` and call `Validate()`
 4. Generate JSON Schema with `schema.NewGenerator[T]()`
 
@@ -237,7 +237,7 @@ type User struct {
 }
 
 func (u *User) FieldName() godantic.FieldOptions[string] {
-    return godantic.WithFieldOptions(
+    return godantic.Field(
         godantic.Required[string](),
         godantic.Description[string]("User's full name"),
         godantic.MinLen(2),

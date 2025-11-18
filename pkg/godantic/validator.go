@@ -33,7 +33,7 @@ func Field[T any](fns ...func(FieldOptions[T]) FieldOptions[T]) FieldOptions[T] 
 	return fo
 }
 
-// Required marks a field as required (can be used with WithFieldOptions)
+// Required marks a field as required (can be used with Field)
 func Required[T any]() func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
 		fo.Required_ = true
@@ -41,7 +41,7 @@ func Required[T any]() func(FieldOptions[T]) FieldOptions[T] {
 	}
 }
 
-// Validate adds a custom validator function (can be used with WithFieldOptions)
+// Validate adds a custom validator function (can be used with Field)
 func Validate[T any](fn func(T) error) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
 		fo.Validators_ = append(fo.Validators_, fn)
