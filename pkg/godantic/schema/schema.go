@@ -61,10 +61,17 @@ func (g *Generator[T]) enhanceSchemaWithValidation(schema *jsonschema.Schema) {
 
 	// Enhance each property with validation metadata
 	for fieldName, opts := range fieldOptions {
+		// Try both the original field name and lowercase first letter
 		jsonName := toLowerFirst(fieldName)
+
 		prop, ok := actualSchema.Properties.Get(jsonName)
 		if !ok || prop == nil {
-			continue
+			// Try with original field name (jsonschema lib may use original case)
+			prop, ok = actualSchema.Properties.Get(fieldName)
+			if !ok || prop == nil {
+				continue
+			}
+			jsonName = fieldName // Use the one that worked
 		}
 
 		// Add required fields
@@ -197,7 +204,20 @@ func applyObjectConstraints(prop *jsonschema.Schema, constraints map[string]any)
 // applyValueConstraints applies value constraints (enum, const, default)
 func applyValueConstraints(prop *jsonschema.Schema, constraints map[string]any) {
 	if enum, ok := constraints[godantic.ConstraintEnum]; ok {
-		prop.Enum = enum.([]any)
+		// Convert enum to []any (it may be []T from OneOf[T])
+		if enumSlice, ok := enum.([]any); ok {
+			prop.Enum = enumSlice
+		} else {
+			// Handle typed slices by converting to []any using reflection
+			v := reflect.ValueOf(enum)
+			if v.Kind() == reflect.Slice {
+				enumAny := make([]any, v.Len())
+				for i := 0; i < v.Len(); i++ {
+					enumAny[i] = v.Index(i).Interface()
+				}
+				prop.Enum = enumAny
+			}
+		}
 	}
 	if constVal, ok := constraints[godantic.ConstraintConst]; ok {
 		prop.Const = constVal
