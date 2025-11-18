@@ -39,4 +39,8 @@ const (
 
 	// Value constraints
 	ConstraintEnum = "enum"
+
+	// Union constraints
+	ConstraintAnyOf         = "anyOf"
+	ConstraintDiscriminator = "discriminator"
 )

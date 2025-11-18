@@ -59,8 +59,79 @@ func (g *Generator[T]) enhanceSchemaWithValidation(schema *jsonschema.Schema) {
 		return
 	}
 
+	// Reflect discriminated union variant types
+	g.reflectUnionVariants(schema, fieldOptions)
+
 	// Enhance each property with validation metadata
-	for fieldName, opts := range fieldOptions {
+	g.enhanceProperties(actualSchema, fieldOptions)
+}
+
+// fieldOption is a local interface for accessing field option properties
+type fieldOption interface {
+	Required() bool
+	Constraints() map[string]any
+}
+
+// reflectUnionVariants reflects all discriminated union variant types and adds them to schema definitions
+func (g *Generator[T]) reflectUnionVariants(schema *jsonschema.Schema, fieldOptions map[string]any) {
+	for _, optsAny := range fieldOptions {
+		opts := optsAny.(fieldOption)
+		if discriminator, ok := opts.Constraints()[godantic.ConstraintDiscriminator].(map[string]any); ok {
+			if mapping, ok := discriminator["mapping"].(map[string]any); ok {
+				// Reflect each variant type and add to schema definitions
+				for _, variant := range mapping {
+					g.reflectVariantType(schema, variant)
+				}
+			}
+		}
+	}
+}
+
+// reflectVariantType reflects a single variant type and adds it to the schema
+func (g *Generator[T]) reflectVariantType(schema *jsonschema.Schema, variant any) {
+	variantType := reflect.TypeOf(variant)
+	if variantType == nil {
+		return
+	}
+
+	// Reflect the variant type to ensure it's in the schema
+	variantSchema := g.reflector.Reflect(variant)
+
+	// Add to definitions if not already present
+	if schema.Definitions == nil {
+		schema.Definitions = make(jsonschema.Definitions)
+	}
+
+	// Find the actual variant definition (it might be nested)
+	variantDefName := variantType.Name()
+	if variantSchema.Definitions != nil {
+		// If the reflected schema has definitions, merge them
+		for defName, defSchema := range variantSchema.Definitions {
+			if _, exists := schema.Definitions[defName]; !exists {
+				schema.Definitions[defName] = defSchema
+			}
+		}
+	}
+
+	// Add the main variant schema if not already there
+	if _, exists := schema.Definitions[variantDefName]; !exists {
+		if variantSchema.Ref != "" {
+			// If it's a reference, we need to get the actual schema
+			actualVariantSchema := findActualSchema(variantSchema)
+			if actualVariantSchema != nil {
+				schema.Definitions[variantDefName] = actualVariantSchema
+			}
+		} else {
+			schema.Definitions[variantDefName] = variantSchema
+		}
+	}
+}
+
+// enhanceProperties enhances each property with validation metadata
+func (g *Generator[T]) enhanceProperties(actualSchema *jsonschema.Schema, fieldOptions map[string]any) {
+	for fieldName, optsAny := range fieldOptions {
+		opts := optsAny.(fieldOption)
+
 		// Try both the original field name and lowercase first letter
 		jsonName := toLowerFirst(fieldName)
 
@@ -107,6 +178,7 @@ func applyConstraints(prop *jsonschema.Schema, constraints map[string]any) {
 	applyArrayConstraints(prop, constraints)
 	applyObjectConstraints(prop, constraints)
 	applyValueConstraints(prop, constraints)
+	applyUnionConstraints(prop, constraints)
 }
 
 // applyMetadataConstraints applies metadata constraints (description, title, etc.)
@@ -224,6 +296,54 @@ func applyValueConstraints(prop *jsonschema.Schema, constraints map[string]any) 
 	}
 	if defaultVal, ok := constraints[godantic.ConstraintDefault]; ok {
 		prop.Default = defaultVal
+	}
+}
+
+// applyUnionConstraints applies union constraints (anyOf, oneOf with discriminator)
+func applyUnionConstraints(prop *jsonschema.Schema, constraints map[string]any) {
+	// Handle Union (anyOf)
+	if anyOf, ok := constraints[godantic.ConstraintAnyOf]; ok {
+		if anyOfSlice, ok := anyOf.([]map[string]string); ok {
+			schemas := make([]*jsonschema.Schema, len(anyOfSlice))
+			for i, typeMap := range anyOfSlice {
+				schemas[i] = &jsonschema.Schema{
+					Type: typeMap["type"],
+				}
+			}
+			prop.AnyOf = schemas
+		}
+	}
+
+	// Handle DiscriminatedUnion (oneOf with discriminator)
+	if discriminator, ok := constraints[godantic.ConstraintDiscriminator].(map[string]any); ok {
+		propertyName, _ := discriminator["propertyName"].(string)
+		mapping, _ := discriminator["mapping"].(map[string]any)
+
+		if propertyName != "" && mapping != nil {
+			// Create oneOf schemas for each variant
+			schemas := make([]*jsonschema.Schema, 0, len(mapping))
+			for _, variant := range mapping {
+				// Use reflection to get the type of the variant
+				variantType := reflect.TypeOf(variant)
+				if variantType != nil {
+					// Create a temporary schema for this variant type
+					variantSchema := &jsonschema.Schema{
+						Ref: fmt.Sprintf("#/$defs/%s", variantType.Name()),
+					}
+					schemas = append(schemas, variantSchema)
+				}
+			}
+			prop.OneOf = schemas
+
+			// Add discriminator as an OpenAPI extension
+			// This is stored in Extras since it's OpenAPI-specific, not core JSON Schema
+			if prop.Extras == nil {
+				prop.Extras = make(map[string]any)
+			}
+			prop.Extras["discriminator"] = map[string]any{
+				"propertyName": propertyName,
+			}
+		}
 	}
 }
 

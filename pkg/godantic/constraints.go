@@ -413,3 +413,43 @@ func ContentMediaType(mediaType string) func(FieldOptions[string]) FieldOptions[
 		return fo
 	}
 }
+
+// Union creates a union type that accepts multiple types (anyOf in JSON Schema)
+// For fields of type `any` that can be one of several types.
+// Example: Union[any]("string", "integer", "object")
+func Union[T any](allowedTypes ...string) func(FieldOptions[T]) FieldOptions[T] {
+	return func(fo FieldOptions[T]) FieldOptions[T] {
+		if fo.Constraints_ == nil {
+			fo.Constraints_ = make(map[string]any)
+		}
+
+		// Store anyOf for schema generation
+		anyOfSchemas := make([]map[string]string, len(allowedTypes))
+		for i, typeName := range allowedTypes {
+			anyOfSchemas[i] = map[string]string{"type": typeName}
+		}
+		fo.Constraints_[ConstraintAnyOf] = anyOfSchemas
+
+		return fo
+	}
+}
+
+// DiscriminatedUnion creates a discriminated union (oneOf with discriminator in JSON Schema)
+// The discriminatorField is used to determine which variant the data represents.
+// variants is a map of discriminator value -> example struct/type for schema generation.
+// Example: DiscriminatedUnion[any]("type", map[string]any{"cat": Cat{}, "dog": Dog{}})
+func DiscriminatedUnion[T any](discriminatorField string, variants map[string]any) func(FieldOptions[T]) FieldOptions[T] {
+	return func(fo FieldOptions[T]) FieldOptions[T] {
+		if fo.Constraints_ == nil {
+			fo.Constraints_ = make(map[string]any)
+		}
+
+		// Store discriminator info for schema generation
+		fo.Constraints_[ConstraintDiscriminator] = map[string]any{
+			"propertyName": discriminatorField,
+			"mapping":      variants,
+		}
+
+		return fo
+	}
+}

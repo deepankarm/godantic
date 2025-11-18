@@ -473,6 +473,10 @@ func (v *Validator[T]) ValidateJSON(data []byte) (*T, []ValidationError) {
 }
 
 // FieldOptions returns the field options map (for schema generation)
-func (v *Validator[T]) FieldOptions() map[string]*fieldOptionHolder {
-	return v.fieldOptions
+func (v *Validator[T]) FieldOptions() map[string]any {
+	result := make(map[string]any, len(v.fieldOptions))
+	for k, v := range v.fieldOptions {
+		result[k] = v
+	}
+	return result
 }
