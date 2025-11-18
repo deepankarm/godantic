@@ -18,6 +18,7 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 - Single source of truth for validation + schema
 - Full Go language power (conditionals, custom functions, external calls)
 - Type-safe with generics (compile-time checks)
+- Support for both simple unions (anyOf) and discriminated unions (oneOf)
 - Testable validation logic
 - No tag parsing, easier debugging
 
@@ -109,6 +110,39 @@ func (u *User) FieldPassword() godantic.FieldOptions[string] {
 }
 ```
 
+### Union Types
+
+Support for both simple unions (anyOf) and discriminated unions (oneOf):
+
+```go
+// Simple Union - field can be multiple types
+type Config struct {
+    Value any  // Can be string, int, or object
+}
+
+func (c *Config) FieldValue() godantic.FieldOptions[any] {
+    return godantic.Field(
+        godantic.Union[any]("string", "integer", "object"),
+        godantic.Description[any]("Can be a string, number, or object"),
+    )
+}
+
+// Discriminated Union - type determined by discriminator field
+type Animal any  // Can be Cat, Dog, or Bird
+
+func (a *Response) FieldAnimal() godantic.FieldOptions[any] {
+    return godantic.Field(
+        godantic.DiscriminatedUnion[any]("type", map[string]any{
+            "cat":  Cat{},
+            "dog":  Dog{},
+            "bird": Bird{},
+        }),
+    )
+}
+```
+
+This generates proper `anyOf` or `oneOf` with discriminator in JSON Schema.
+
 ### JSON Schema Generation
 
 Generate JSON Schema without struct tags:
@@ -167,6 +201,14 @@ godantic.UniqueItems[T]()           // all items must be unique
 // map/object constraints
 godantic.MinProperties(count)       // minimum properties
 godantic.MaxProperties(count)       // maximum properties
+
+// union constraints
+godantic.Union[T](type1, type2, ...) // any of the types
+godantic.DiscriminatedUnion[T](discriminator, map[string]any{
+    "type1": type1{},
+    "type2": type2{},
+    ...
+}) // one of the types based on discriminator
 
 // value constraints
 godantic.OneOf(value1, value2, ...) // enum - one of allowed values
