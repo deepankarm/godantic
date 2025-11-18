@@ -1,7 +1,6 @@
 package godantic_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
@@ -17,32 +16,22 @@ const (
 	StatusArchived Status = "archived"
 )
 
+// Define validation on Status type itself - will be reused across all structs
+func (Status) FieldStatus() godantic.FieldOptions[Status] {
+	return godantic.Field(
+		godantic.Required[Status](),
+		godantic.OneOf(StatusPending, StatusActive, StatusInactive, StatusArchived),
+	)
+}
+
 type Task struct {
 	Name   string
-	Status Status
+	Status Status // Validator automatically uses Status.FieldStatus()
 }
 
 func (t *Task) FieldName() godantic.FieldOptions[string] {
 	return godantic.Field(
 		godantic.Required[string](),
-	)
-}
-
-func (t *Task) FieldStatus() godantic.FieldOptions[Status] {
-	return godantic.Field(
-		godantic.Required[Status](),
-		godantic.Validate(func(status Status) error {
-			validStatuses := map[Status]bool{
-				StatusPending:  true,
-				StatusActive:   true,
-				StatusInactive: true,
-				StatusArchived: true,
-			}
-			if !validStatuses[status] {
-				return fmt.Errorf("invalid status: %s (must be one of: pending, active, inactive, archived)", status)
-			}
-			return nil
-		}),
 	)
 }
 
@@ -83,9 +72,6 @@ func TestEnums(t *testing.T) {
 		if len(errs) != 1 {
 			t.Errorf("expected 1 error, got %d", len(errs))
 		}
-		if errs[0].Error() != "Status: invalid status: invalid (must be one of: pending, active, inactive, archived)" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
 	})
 
 	t.Run("empty status should fail", func(t *testing.T) {
@@ -99,6 +85,78 @@ func TestEnums(t *testing.T) {
 		}
 		if errs[0].Error() != "Status: required field" {
 			t.Errorf("unexpected error: %v", errs[0])
+		}
+	})
+}
+
+// Test that parent struct can override type-level validation
+type Severity string
+
+const (
+	SeverityLow  Severity = "low"
+	SeverityHigh Severity = "high"
+)
+
+// Type-level validation for Severity
+func (Severity) FieldSeverity() godantic.FieldOptions[Severity] {
+	return godantic.Field(
+		godantic.Required[Severity](),
+		godantic.OneOf(SeverityLow, SeverityHigh),
+	)
+}
+
+type Bug struct {
+	Description string
+	Severity    Severity
+}
+
+func (b *Bug) FieldDescription() godantic.FieldOptions[string] {
+	return godantic.Field(
+		godantic.Required[string](),
+	)
+}
+
+// Override type-level validation - make Severity optional for Bug
+func (b *Bug) FieldSeverity() godantic.FieldOptions[Severity] {
+	return godantic.Field(
+		// Not required - overrides Severity.FieldSeverity()
+		godantic.OneOf(SeverityLow, SeverityHigh),
+	)
+}
+
+func TestTypeValidationOverride(t *testing.T) {
+	validator := godantic.NewValidator[Bug]()
+
+	t.Run("bug with severity should pass", func(t *testing.T) {
+		bug := Bug{
+			Description: "Memory leak",
+			Severity:    SeverityHigh,
+		}
+		errs := validator.Validate(&bug)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("bug without severity should pass when field is zero value", func(t *testing.T) {
+		bug := Bug{
+			Description: "Memory leak",
+			// Severity not set (zero value) - not required, so validation skipped
+		}
+		errs := validator.Validate(&bug)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors (Severity not required for Bug), got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("bug with invalid severity should fail even when not required", func(t *testing.T) {
+		bug := Bug{
+			Description: "Memory leak",
+			Severity:    Severity("invalid"), // Invalid value still validates
+		}
+		errs := validator.Validate(&bug)
+		if len(errs) == 0 {
+			t.Error("expected validation error for invalid severity")
 		}
 	})
 }

@@ -84,7 +84,7 @@ func (v *Validator[T]) scanFieldOptions() {
 	val := reflect.ValueOf(&zero).Elem()
 	typ := val.Type()
 
-	// Look for Field{Name}() methods
+	// First, look for Field{Name}() methods on the parent struct
 	ptrType := reflect.PointerTo(typ)
 	for i := 0; i < ptrType.NumMethod(); i++ {
 		method := ptrType.Method(i)
@@ -93,47 +93,97 @@ func (v *Validator[T]) scanFieldOptions() {
 			// Call method to get options
 			result := method.Func.Call([]reflect.Value{reflect.New(typ)})
 			if len(result) > 0 {
-				// Use reflection to extract validators
-				optsValue := result[0]
-				holder := &fieldOptionHolder{
-					required:    optsValue.FieldByName("Required_").Bool(),
-					validators:  []func(any) error{},
-					constraints: make(map[string]any),
-				}
-
-				// Extract constraints map
-				constraintsField := optsValue.FieldByName("Constraints_")
-				if constraintsField.IsValid() && !constraintsField.IsNil() {
-					// Copy constraints map
-					iter := constraintsField.MapRange()
-					for iter.Next() {
-						key := iter.Key().String()
-						value := iter.Value().Interface()
-						holder.constraints[key] = value
-					}
-				}
-
-				// Extract validators using reflection
-				validatorsField := optsValue.FieldByName("Validators_")
-				if validatorsField.IsValid() && validatorsField.Len() > 0 {
-					for j := 0; j < validatorsField.Len(); j++ {
-						validatorFunc := validatorsField.Index(j)
-						// Wrap the typed validator in a type-erased one
-						holder.validators = append(holder.validators, func(val any) error {
-							// Call the validator using reflection
-							results := validatorFunc.Call([]reflect.Value{reflect.ValueOf(val)})
-							if len(results) > 0 && !results[0].IsNil() {
-								return results[0].Interface().(error)
-							}
-							return nil
-						})
-					}
-				}
-
+				holder := v.extractFieldOptions(result[0])
 				v.fieldOptions[fieldName] = holder
 			}
 		}
 	}
+
+	// Second, check each struct field for type-level validation
+	// Only if parent struct didn't define Field{Name}() method
+	for i := 0; i < typ.NumField(); i++ {
+		structField := typ.Field(i)
+		fieldName := structField.Name
+
+		// Skip if parent struct already defined validation for this field
+		if _, exists := v.fieldOptions[fieldName]; exists {
+			continue
+		}
+
+		// Check if the field's type has Field{TypeName}() method
+		fieldType := structField.Type
+		typeName := fieldType.Name()
+		if typeName == "" {
+			continue // Skip anonymous types
+		}
+
+		methodName := "Field" + typeName
+
+		// Try pointer receiver first
+		ptrFieldType := reflect.PointerTo(fieldType)
+		method, found := ptrFieldType.MethodByName(methodName)
+		if !found {
+			// Try value receiver
+			method, found = fieldType.MethodByName(methodName)
+		}
+
+		if found {
+			// Create a zero value instance of the field type
+			var fieldInstance reflect.Value
+			if method.Type.In(0).Kind() == reflect.Pointer {
+				fieldInstance = reflect.New(fieldType)
+			} else {
+				fieldInstance = reflect.Zero(fieldType)
+			}
+
+			// Call the type's Field{TypeName}() method
+			result := method.Func.Call([]reflect.Value{fieldInstance})
+			if len(result) > 0 {
+				holder := v.extractFieldOptions(result[0])
+				v.fieldOptions[fieldName] = holder
+			}
+		}
+	}
+}
+
+// extractFieldOptions extracts validation info from FieldOptions[T] using reflection
+func (v *Validator[T]) extractFieldOptions(optsValue reflect.Value) *fieldOptionHolder {
+	holder := &fieldOptionHolder{
+		required:    optsValue.FieldByName("Required_").Bool(),
+		validators:  []func(any) error{},
+		constraints: make(map[string]any),
+	}
+
+	// Extract constraints map
+	constraintsField := optsValue.FieldByName("Constraints_")
+	if constraintsField.IsValid() && !constraintsField.IsNil() {
+		// Copy constraints map
+		iter := constraintsField.MapRange()
+		for iter.Next() {
+			key := iter.Key().String()
+			value := iter.Value().Interface()
+			holder.constraints[key] = value
+		}
+	}
+
+	// Extract validators using reflection
+	validatorsField := optsValue.FieldByName("Validators_")
+	if validatorsField.IsValid() && validatorsField.Len() > 0 {
+		for j := 0; j < validatorsField.Len(); j++ {
+			validatorFunc := validatorsField.Index(j)
+			// Wrap the typed validator in a type-erased one
+			holder.validators = append(holder.validators, func(val any) error {
+				// Call the validator using reflection
+				results := validatorFunc.Call([]reflect.Value{reflect.ValueOf(val)})
+				if len(results) > 0 && !results[0].IsNil() {
+					return results[0].Interface().(error)
+				}
+				return nil
+			})
+		}
+	}
+
+	return holder
 }
 
 func (v *Validator[T]) Validate(obj *T) []error {
@@ -155,12 +205,15 @@ func (v *Validator[T]) Validate(obj *T) []error {
 			continue
 		}
 
-		// Run validators if field is not zero or if validators should run on zero values
-		if !field.IsZero() || len(opts.validators) > 0 {
-			for _, validator := range opts.validators {
-				if err := validator(value); err != nil {
-					errs = append(errs, fmt.Errorf("%s: %w", fieldName, err))
-				}
+		// Skip validation for optional fields with zero values
+		if field.IsZero() {
+			continue
+		}
+
+		// Run validators for non-zero values
+		for _, validator := range opts.validators {
+			if err := validator(value); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", fieldName, err))
 			}
 		}
 	}
