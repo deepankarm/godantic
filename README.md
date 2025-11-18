@@ -245,3 +245,7 @@ jsonSchema, err := sg.GenerateJSON()
 ```bash
 go test ./... -v -cover
 ```
+
+---
+
+> Disclaimer: Most of the code and tests are written by Cursor.
