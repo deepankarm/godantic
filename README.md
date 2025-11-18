@@ -1,6 +1,6 @@
 # Godantic
 
-**Validation and schema generation in one place.** Inspired by Python's Pydantic, Godantic brings type-safe validation and automatic JSON Schema generation to Go — without struct tags.
+**Validation and schema generation in one place.** Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic), Godantic brings type-safe validation and automatic JSON Schema generation to Go — without struct tags.
 
 Most Go validation libraries use struct tags, requiring separate tools for validation and schema generation. This creates duplication, limits flexibility, and makes testing difficult. Godantic solves this by defining both validation and schema in `Field{FieldName}()` methods:
 
