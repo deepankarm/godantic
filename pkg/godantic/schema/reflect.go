@@ -11,23 +11,26 @@ import (
 func (g *Generator[T]) reflectUnionVariants(schema *jsonschema.Schema, fieldOptions map[string]any) {
 	for _, optsAny := range fieldOptions {
 		opts := optsAny.(fieldOption)
+		g.processUnionConstraints(schema, opts.Constraints())
+	}
+}
 
-		// Handle DiscriminatedUnion variants
-		if discriminator, ok := opts.Constraints()[godantic.ConstraintDiscriminator].(map[string]any); ok {
-			if mapping, ok := discriminator["mapping"].(map[string]any); ok {
-				// Reflect each variant type and add to schema definitions
-				for _, variant := range mapping {
-					g.reflectVariantType(schema, variant)
-				}
+// processUnionConstraints processes union constraints and reflects variant types
+func (g *Generator[T]) processUnionConstraints(schema *jsonschema.Schema, constraints map[string]any) {
+	// Handle DiscriminatedUnion variants
+	if discriminator, ok := constraints[godantic.ConstraintDiscriminator].(map[string]any); ok {
+		if mapping, ok := discriminator["mapping"].(map[string]any); ok {
+			for _, variant := range mapping {
+				g.reflectVariantType(schema, variant)
 			}
 		}
+	}
 
-		// Handle UnionOf complex types
-		if anyOfTypes, ok := opts.Constraints()["anyOfTypes"]; ok {
-			if types, ok := anyOfTypes.([]any); ok {
-				for _, typeInstance := range types {
-					g.reflectUnionOfType(schema, typeInstance)
-				}
+	// Handle UnionOf complex types
+	if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
+		if types, ok := anyOfTypes.([]any); ok {
+			for _, typeInstance := range types {
+				g.reflectUnionOfType(schema, typeInstance)
 			}
 		}
 	}
@@ -97,96 +100,11 @@ func (g *Generator[T]) reflectVariantType(schema *jsonschema.Schema, variant any
 
 // reflectUnionVariantsFromType reflects union variants from a specific type's fields
 func reflectUnionVariantsFromType[T any](g *Generator[T], schema *jsonschema.Schema, t reflect.Type) {
-	// Create a zero value instance of the type
-	zeroValue := reflect.New(t).Interface()
-	v := reflect.ValueOf(zeroValue)
+	// Use shared reflection utility to scan Field{Name}() methods
+	fieldOptions := godantic.ScanTypeFieldOptions(t)
 
-	// Process each field's Field* method
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		methodName := "Field" + field.Name
-		method := v.MethodByName(methodName)
-		if !method.IsValid() {
-			continue
-		}
-
-		// Call the method to get field options
-		results := method.Call(nil)
-		if len(results) != 1 {
-			continue
-		}
-
-		// Access the Constraints_ field
-		optsValue := results[0]
-		constraintsField := optsValue.FieldByName("Constraints_")
-		if !constraintsField.IsValid() {
-			continue
-		}
-
-		constraints, ok := constraintsField.Interface().(map[string]any)
-		if !ok {
-			continue
-		}
-
-		// Handle Union complex types (anyOfTypes)
-		if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
-			if types, ok := anyOfTypes.([]any); ok {
-				for _, typeInstance := range types {
-					g.reflectUnionOfType(schema, typeInstance)
-				}
-			}
-		}
-
-		// Handle DiscriminatedUnion variants
-		if discriminator, ok := constraints[godantic.ConstraintDiscriminator].(map[string]any); ok {
-			if mapping, ok := discriminator["mapping"].(map[string]any); ok {
-				for _, variant := range mapping {
-					g.reflectVariantType(schema, variant)
-				}
-			}
-		}
-	}
-}
-
-// collectStructTypes recursively collects all struct types from a type
-func collectStructTypes(t reflect.Type, types map[string]reflect.Type) {
-	if t == nil {
-		return
-	}
-
-	// Handle pointers
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	// Only process structs
-	if t.Kind() != reflect.Struct {
-		return
-	}
-
-	// Add this type to the map
-	if t.Name() != "" {
-		types[t.Name()] = t
-	}
-
-	// Recursively process all struct fields
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		fieldType := field.Type
-
-		// Handle slices/arrays
-		if fieldType.Kind() == reflect.Slice || fieldType.Kind() == reflect.Array {
-			fieldType = fieldType.Elem()
-		}
-
-		// Handle pointers
-		if fieldType.Kind() == reflect.Pointer {
-			fieldType = fieldType.Elem()
-		}
-
-		// Recursively collect struct types
-		if fieldType.Kind() == reflect.Struct {
-			collectStructTypes(fieldType, types)
-		}
+	// Process each field's union constraints
+	for _, opts := range fieldOptions {
+		g.processUnionConstraints(schema, opts.Constraints)
 	}
 }

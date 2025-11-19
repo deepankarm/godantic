@@ -83,125 +83,40 @@ func (foh *fieldOptionHolder) Constraints() map[string]any {
 	return foh.constraints
 }
 
-// Validator validates structs
+// Validator validates structs or discriminated union interfaces
 type Validator[T any] struct {
 	fieldOptions map[string]*fieldOptionHolder
+	config       validatorConfig
 }
 
-func NewValidator[T any]() *Validator[T] {
+// NewValidator creates a new validator for type T.
+// For concrete structs, use without options: NewValidator[MyStruct]()
+// For discriminated unions (interfaces), use with WithDiscriminator option:
+//
+//	NewValidator[MyInterface](WithDiscriminator("type", map[string]any{...}))
+func NewValidator[T any](opts ...ValidatorOption) *Validator[T] {
 	v := &Validator[T]{
 		fieldOptions: make(map[string]*fieldOptionHolder),
 	}
-	v.scanFieldOptions()
+
+	// Apply options
+	for _, opt := range opts {
+		opt.apply(&v.config)
+	}
+
+	// Only scan field options if this is a concrete struct (not a discriminated union interface)
+	if v.config.discriminator == nil {
+		v.scanFieldOptions()
+	}
+
 	return v
 }
 
 func (v *Validator[T]) scanFieldOptions() {
 	var zero T
-	val := reflect.ValueOf(&zero).Elem()
-	typ := val.Type()
-
-	// First, look for Field{Name}() methods on the parent struct
-	ptrType := reflect.PointerTo(typ)
-	for i := 0; i < ptrType.NumMethod(); i++ {
-		method := ptrType.Method(i)
-		if len(method.Name) > 5 && method.Name[:5] == "Field" {
-			fieldName := method.Name[5:]
-			// Call method to get options
-			result := method.Func.Call([]reflect.Value{reflect.New(typ)})
-			if len(result) > 0 {
-				holder := v.extractFieldOptions(result[0])
-				v.fieldOptions[fieldName] = holder
-			}
-		}
-	}
-
-	// Second, check each struct field for type-level validation
-	// Only if parent struct didn't define Field{Name}() method
-	for i := 0; i < typ.NumField(); i++ {
-		structField := typ.Field(i)
-		fieldName := structField.Name
-
-		// Skip if parent struct already defined validation for this field
-		if _, exists := v.fieldOptions[fieldName]; exists {
-			continue
-		}
-
-		// Check if the field's type has Field{TypeName}() method
-		fieldType := structField.Type
-		typeName := fieldType.Name()
-		if typeName == "" {
-			continue // Skip anonymous types
-		}
-
-		methodName := "Field" + typeName
-
-		// Try pointer receiver first
-		ptrFieldType := reflect.PointerTo(fieldType)
-		method, found := ptrFieldType.MethodByName(methodName)
-		if !found {
-			// Try value receiver
-			method, found = fieldType.MethodByName(methodName)
-		}
-
-		if found {
-			// Create a zero value instance of the field type
-			var fieldInstance reflect.Value
-			if method.Type.In(0).Kind() == reflect.Pointer {
-				fieldInstance = reflect.New(fieldType)
-			} else {
-				fieldInstance = reflect.Zero(fieldType)
-			}
-
-			// Call the type's Field{TypeName}() method
-			result := method.Func.Call([]reflect.Value{fieldInstance})
-			if len(result) > 0 {
-				holder := v.extractFieldOptions(result[0])
-				v.fieldOptions[fieldName] = holder
-			}
-		}
-	}
+	typ := reflect.TypeOf(zero)
+	v.fieldOptions = scanner.scanFieldOptionsFromType(typ)
 }
-
-// extractFieldOptions extracts validation info from FieldOptions[T] using reflection
-func (v *Validator[T]) extractFieldOptions(optsValue reflect.Value) *fieldOptionHolder {
-				holder := &fieldOptionHolder{
-					required:    optsValue.FieldByName("Required_").Bool(),
-					validators:  []func(any) error{},
-					constraints: make(map[string]any),
-				}
-
-				// Extract constraints map
-				constraintsField := optsValue.FieldByName("Constraints_")
-				if constraintsField.IsValid() && !constraintsField.IsNil() {
-					// Copy constraints map
-					iter := constraintsField.MapRange()
-					for iter.Next() {
-						key := iter.Key().String()
-						value := iter.Value().Interface()
-						holder.constraints[key] = value
-					}
-				}
-
-				// Extract validators using reflection
-				validatorsField := optsValue.FieldByName("Validators_")
-				if validatorsField.IsValid() && validatorsField.Len() > 0 {
-					for j := 0; j < validatorsField.Len(); j++ {
-						validatorFunc := validatorsField.Index(j)
-						// Wrap the typed validator in a type-erased one
-						holder.validators = append(holder.validators, func(val any) error {
-							// Call the validator using reflection
-							results := validatorFunc.Call([]reflect.Value{reflect.ValueOf(val)})
-							if len(results) > 0 && !results[0].IsNil() {
-								return results[0].Interface().(error)
-							}
-							return nil
-						})
-					}
-				}
-
-	return holder
-			}
 
 func (v *Validator[T]) Validate(obj *T) []ValidationError {
 	return v.validateWithPath(obj, []string{})
@@ -209,202 +124,8 @@ func (v *Validator[T]) Validate(obj *T) []ValidationError {
 
 // validateWithPath validates the struct and tracks the field path for nested validation
 func (v *Validator[T]) validateWithPath(obj *T, path []string) []ValidationError {
-	var errs []ValidationError
-	val := reflect.ValueOf(obj).Elem()
-
-	for fieldName, opts := range v.fieldOptions {
-		field := val.FieldByName(fieldName)
-		if !field.IsValid() {
-			continue
-		}
-
-		// Build current field path
-		currentPath := append(append([]string{}, path...), fieldName)
-
-		// Get the actual field value
-		value := field.Interface()
-
-		// Check for required fields (zero value check)
-		if opts.required && field.IsZero() {
-			// If field has a default value, it's not an error (will be applied via ApplyDefaults)
-			if _, hasDefault := opts.constraints[ConstraintDefault]; !hasDefault {
-				errs = append(errs, ValidationError{
-					Loc:     currentPath,
-					Message: "required field",
-					Type:    "required",
-				})
-				continue
-			}
-		}
-
-		// Skip validation for optional fields with zero values
-		if field.IsZero() {
-			continue
-		}
-
-		// Run validators for non-zero values
-			for _, validator := range opts.validators {
-				if err := validator(value); err != nil {
-				errs = append(errs, ValidationError{
-					Loc:     currentPath,
-					Message: err.Error(),
-					Type:    "constraint",
-				})
-			}
-		}
-
-		// Validate union constraints
-		if unionErr := v.validateUnionConstraints(value, opts.constraints, currentPath); unionErr != nil {
-			errs = append(errs, *unionErr)
-		}
-
-		// Recursively validate nested structs
-		if field.Kind() == reflect.Struct && !isBasicType(field.Type()) {
-			nestedErrs := v.validateNested(field, currentPath)
-			errs = append(errs, nestedErrs...)
-				}
-
-		// Validate pointer to struct
-		if field.Kind() == reflect.Pointer && !field.IsNil() && field.Elem().Kind() == reflect.Struct {
-			nestedErrs := v.validateNested(field.Elem(), currentPath)
-			errs = append(errs, nestedErrs...)
-		}
-	}
-
-	return errs
-}
-
-// validateNested validates a nested struct by calling its validator if it has Field methods
-func (v *Validator[T]) validateNested(field reflect.Value, parentPath []string) []ValidationError {
-	// Get the type of the nested struct
-	fieldType := field.Type()
-
-	// Check if the nested struct has Field methods (has validation)
-	ptrType := reflect.PointerTo(fieldType)
-	hasValidation := false
-	for i := 0; i < ptrType.NumMethod(); i++ {
-		method := ptrType.Method(i)
-		if len(method.Name) > 5 && method.Name[:5] == "Field" {
-			hasValidation = true
-			break
-		}
-	}
-
-	if !hasValidation {
-		return nil
-	}
-
-	// For nested validation, we need to scan the nested struct's Field methods
-	// and validate recursively
-	var errs []ValidationError
-	ptrVal := field.Addr()
-
-	for i := 0; i < ptrType.NumMethod(); i++ {
-		method := ptrType.Method(i)
-		if len(method.Name) <= 5 || method.Name[:5] != "Field" {
-			continue
-		}
-
-		nestedFieldName := method.Name[5:]
-		nestedField := field.FieldByName(nestedFieldName)
-		if !nestedField.IsValid() {
-			continue
-		}
-
-		// Get field options by calling the Field method
-		result := method.Func.Call([]reflect.Value{ptrVal})
-		if len(result) == 0 {
-			continue
-		}
-
-		// Extract validation info from the result
-		nestedFieldPath := append(append([]string{}, parentPath...), nestedFieldName)
-		resultType := result[0].Type()
-
-		if resultType.Kind() != reflect.Struct {
-			continue
-		}
-
-		// Extract Required_
-		requiredField := result[0].FieldByName("Required_")
-		isRequired := requiredField.IsValid() && requiredField.Kind() == reflect.Bool && requiredField.Bool()
-
-		// Extract Constraints_ to check for defaults
-		constraintsField := result[0].FieldByName("Constraints_")
-		hasDefault := false
-		if constraintsField.IsValid() && constraintsField.Kind() == reflect.Map {
-			defaultVal := constraintsField.MapIndex(reflect.ValueOf(ConstraintDefault))
-			hasDefault = defaultVal.IsValid()
-		}
-
-		// Check if field is zero and required
-		if nestedField.IsZero() {
-			if isRequired && !hasDefault {
-				errs = append(errs, ValidationError{
-					Loc:     nestedFieldPath,
-					Message: "required field",
-					Type:    "required",
-				})
-				continue
-			}
-			// Skip validation for optional zero fields
-			continue
-		}
-
-		// Extract and run validators
-		validatorsField := result[0].FieldByName("Validators_")
-		if validatorsField.IsValid() && validatorsField.Kind() == reflect.Slice {
-			fieldValue := nestedField.Interface()
-			for j := 0; j < validatorsField.Len(); j++ {
-				validator := validatorsField.Index(j)
-				if validator.Kind() == reflect.Func {
-					// Call the validator function
-					validatorResults := validator.Call([]reflect.Value{reflect.ValueOf(fieldValue)})
-					if len(validatorResults) > 0 && !validatorResults[0].IsNil() {
-						// Validator returned an error
-						if err, ok := validatorResults[0].Interface().(error); ok {
-							errs = append(errs, ValidationError{
-								Loc:     nestedFieldPath,
-								Message: err.Error(),
-								Type:    "constraint",
-							})
-						}
-					}
-				}
-			}
-		}
-
-		// Recursively validate nested structs
-		if nestedField.Kind() == reflect.Struct && !isBasicType(nestedField.Type()) {
-			nestedErrs := v.validateNested(nestedField, nestedFieldPath)
-			errs = append(errs, nestedErrs...)
-		}
-
-		// Validate pointer to nested struct
-		if nestedField.Kind() == reflect.Ptr && !nestedField.IsNil() && nestedField.Elem().Kind() == reflect.Struct {
-			nestedErrs := v.validateNested(nestedField.Elem(), nestedFieldPath)
-			errs = append(errs, nestedErrs...)
-		}
-	}
-	return errs
-}
-
-// isBasicType checks if a type is a basic Go type (not a custom struct that needs validation)
-func isBasicType(t reflect.Type) bool {
-	switch t.Kind() {
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64, reflect.String,
-		reflect.Slice, reflect.Map, reflect.Array:
-		return true
-	}
-
-	// Check for time.Time and other standard library types we don't want to recurse into
-	if t.PkgPath() == "time" || t.PkgPath() == "sync" {
-		return true
-	}
-
-	return false
+	objPtr := reflect.ValueOf(obj)
+	return validateFieldsWithReflection(objPtr, v.fieldOptions, path, v.validateUnionConstraints)
 }
 
 // validateUnionConstraints validates union (anyOf) and discriminated union (oneOf) constraints
@@ -556,47 +277,23 @@ func matchesJSONSchemaType(val reflect.Value, schemaType string) bool {
 // This should be called after JSON unmarshaling to set defaults for missing fields.
 // Returns an error if reflection fails.
 func (v *Validator[T]) ApplyDefaults(obj *T) error {
-	val := reflect.ValueOf(obj).Elem()
-
-	for fieldName, opts := range v.fieldOptions {
-		field := val.FieldByName(fieldName)
-		if !field.IsValid() {
-			continue
-		}
-
-		// Only apply default if field is zero value
-		if !field.IsZero() {
-			continue
-		}
-
-		// Check if field can be set
-		if !field.CanSet() {
-			continue
-		}
-
-		// Get default from constraints
-		defaultVal, ok := opts.constraints[ConstraintDefault]
-		if !ok {
-			continue
-		}
-
-		// Set the default value
-		defaultReflect := reflect.ValueOf(defaultVal)
-		if defaultReflect.Type().AssignableTo(field.Type()) {
-			field.Set(defaultReflect)
-		}
-	}
-
-	return nil
+	objPtr := reflect.ValueOf(obj)
+	return scanner.applyDefaultsToStruct(objPtr, v.fieldOptions)
 }
 
 // ValidateJSON unmarshals JSON data, applies defaults, and validates.
 // This is a convenience method that combines the three common steps:
-// 1. Unmarshal JSON into the struct
+// 1. Unmarshal JSON into the struct (or route to correct type for discriminated unions)
 // 2. Apply default values to zero-valued fields
 // 3. Validate the struct
 // Returns the populated struct and any validation errors.
 func (v *Validator[T]) ValidateJSON(data []byte) (*T, []ValidationError) {
+	// Check if this is a discriminated union validator
+	if v.config.discriminator != nil {
+		return v.validateDiscriminatedUnion(data, v.config.discriminator)
+	}
+
+	// Standard struct validation
 	var obj T
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return nil, []ValidationError{{

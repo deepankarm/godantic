@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/deepankarm/godantic/pkg/godantic"
 	"github.com/invopop/jsonschema"
 )
 
@@ -39,7 +40,7 @@ func (g *Generator[T]) enhanceAllDefinitions(schema *jsonschema.Schema) {
 
 	// Collect all struct types from the root type
 	structTypes := make(map[string]reflect.Type)
-	collectStructTypes(rootType, structTypes)
+	godantic.CollectStructTypes(rootType, structTypes)
 
 	// Reflect union variants from all nested types (not just root)
 	for _, structType := range structTypes {
@@ -63,50 +64,17 @@ func enhanceDefinitionWithType(defSchema *jsonschema.Schema, t reflect.Type) {
 		return
 	}
 
-	// Create a zero value instance of the type
-	zeroValue := reflect.New(t).Interface()
+	// Use shared reflection utility to scan Field{Name}() methods
+	fieldOptions := godantic.ScanTypeFieldOptions(t)
 
-	// Use reflection to call Field* methods and get field options
-	v := reflect.ValueOf(zeroValue)
+	// Apply field options to schema properties
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		fieldName := field.Name
 
-		// Look for Field{Name}() method
-		methodName := "Field" + fieldName
-		method := v.MethodByName(methodName)
-		if !method.IsValid() {
-			continue
-		}
-
-		// Call the method to get field options
-		results := method.Call(nil)
-		if len(results) != 1 {
-			continue
-		}
-
-		// Get the result value and access Required_ and Constraints_ fields
-		optsValue := results[0]
-
-		// Access the Required_ field
-		requiredField := optsValue.FieldByName("Required_")
-		if !requiredField.IsValid() {
-			continue
-		}
-
-		isRequired, ok := requiredField.Interface().(bool)
-		if !ok {
-			continue
-		}
-
-		// Access the Constraints_ field
-		constraintsField := optsValue.FieldByName("Constraints_")
-		if !constraintsField.IsValid() {
-			continue
-		}
-
-		constraints, ok := constraintsField.Interface().(map[string]any)
-		if !ok {
+		// Get field options (if any)
+		opts, hasOpts := fieldOptions[fieldName]
+		if !hasOpts {
 			continue
 		}
 
@@ -136,12 +104,12 @@ func enhanceDefinitionWithType(defSchema *jsonschema.Schema, t reflect.Type) {
 		}
 
 		// Add required fields
-		if isRequired && !slices.Contains(defSchema.Required, jsonName) {
+		if opts.Required && !slices.Contains(defSchema.Required, jsonName) {
 			defSchema.Required = append(defSchema.Required, jsonName)
 		}
 
 		// Apply all constraints to property
-		applyConstraints(prop, constraints)
+		applyConstraints(prop, opts.Constraints)
 	}
 }
 

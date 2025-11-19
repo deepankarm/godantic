@@ -3,6 +3,7 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
@@ -80,9 +81,7 @@ func (g *Generator[T]) GenerateFlattened() (map[string]any, error) {
 
 	// Create flattened schema with root definition at top level
 	result := make(map[string]any)
-	for k, v := range rootDef {
-		result[k] = v
-	}
+	maps.Copy(result, rootDef)
 
 	// Add $defs for nested types (excluding root type to avoid duplication)
 	if len(defs) > 1 {
