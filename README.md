@@ -455,9 +455,9 @@ go test ./... -v -cover
 
 Check out [`examples/`](./examples/) for complete working examples:
 
+- **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions at the interface level
 - **[`openai-structured-output/`](./examples/openai-structured-output/)** - Using godantic with OpenAI's structured output API to extract meeting summaries from text
 - **[`gemini-structured-output/`](./examples/gemini-structured-output/)** - Using godantic with Google Gemini to parse task lists with enums, dates, and unions  
-- **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions at the interface level
 
 ---
 
