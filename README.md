@@ -1,8 +1,6 @@
 # Godantic
 
-**Validation and schema generation in one place.** 
-
-Godantic provides runtime validation and automatic JSON Schema generation without struct tags. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic). Built for developers working with LLM APIs (OpenAI, Anthropic, Gemini), building REST APIs with OpenAPI specs, or validating complex structured data in Go.
+Godantic provides runtime validation and automatic JSON Schema generation with Union type support, without struct tags. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic). Built for developers working with LLM APIs (OpenAI, Anthropic, Gemini), building REST APIs with OpenAPI specs, or validating complex structured data in Go.
 
 
 ```go
