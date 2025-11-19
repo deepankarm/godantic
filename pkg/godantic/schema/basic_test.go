@@ -185,3 +185,73 @@ func TestSchemaWithOptions(t *testing.T) {
 		}
 	})
 }
+
+func TestGenerateFlattened(t *testing.T) {
+	sg := schema.NewGenerator[SchemaUser]()
+
+	t.Run("flattened schema has root object at top level", func(t *testing.T) {
+		flatSchema, err := sg.GenerateFlattened()
+		if err != nil {
+			t.Fatalf("failed to generate flattened schema: %v", err)
+		}
+
+		// Should have type at root
+		schemaType, ok := flatSchema["type"].(string)
+		if !ok || schemaType != "object" {
+			t.Errorf("expected type 'object' at root, got: %v", flatSchema["type"])
+		}
+
+		// Should have properties at root
+		_, hasProperties := flatSchema["properties"]
+		if !hasProperties {
+			t.Error("flattened schema should have 'properties' at root level")
+		}
+
+		// Should have required at root
+		_, hasRequired := flatSchema["required"]
+		if !hasRequired {
+			t.Error("flattened schema should have 'required' at root level")
+		}
+
+		// Should NOT have $ref at root
+		if _, hasRef := flatSchema["$ref"]; hasRef {
+			t.Error("flattened schema should not have '$ref' at root level")
+		}
+	})
+
+	t.Run("flattened schema preserves validation constraints", func(t *testing.T) {
+		flatSchema, err := sg.GenerateFlattened()
+		if err != nil {
+			t.Fatalf("failed to generate flattened schema: %v", err)
+		}
+
+		properties, ok := flatSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatal("properties is not a map")
+		}
+
+		// Check that name field has constraints
+		nameProp, ok := properties["name"].(map[string]any)
+		if !ok {
+			t.Fatal("name property not found")
+		}
+
+		if _, hasMinLength := nameProp["minLength"]; !hasMinLength {
+			t.Error("name property should have minLength constraint")
+		}
+
+		if _, hasMaxLength := nameProp["maxLength"]; !hasMaxLength {
+			t.Error("name property should have maxLength constraint")
+		}
+
+		// Check that email field has pattern
+		emailProp, ok := properties["email"].(map[string]any)
+		if !ok {
+			t.Fatal("email property not found")
+		}
+
+		if _, hasPattern := emailProp["pattern"]; !hasPattern {
+			t.Error("email property should have pattern constraint")
+		}
+	})
+}

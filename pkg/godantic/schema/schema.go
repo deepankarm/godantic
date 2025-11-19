@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
 	"github.com/invopop/jsonschema"
@@ -33,6 +34,64 @@ func (g *Generator[T]) Generate() (*jsonschema.Schema, error) {
 	schema := g.reflector.Reflect(zero)
 	g.enhanceSchemaWithValidation(schema)
 	return schema, nil
+}
+
+// GenerateFlattened generates a flattened JSON Schema suitable for LLM APIs
+// (OpenAI, Gemini, Claude, etc.) that require the root object definition
+// at the top level instead of a $ref
+func (g *Generator[T]) GenerateFlattened() (map[string]any, error) {
+	schema, err := g.Generate()
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert schema to map for manipulation
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal schema: %w", err)
+	}
+
+	var schemaMap map[string]any
+	if err := json.Unmarshal(schemaJSON, &schemaMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal schema: %w", err)
+	}
+
+	// If there's no $ref at root, return as-is
+	ref, hasRef := schemaMap["$ref"].(string)
+	if !hasRef {
+		return schemaMap, nil
+	}
+
+	// Get the $defs
+	defs, ok := schemaMap["$defs"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("$defs not found in schema")
+	}
+
+	// Extract the root type name from $ref (e.g., "#/$defs/TypeName" -> "TypeName")
+	if !strings.HasPrefix(ref, "#/$defs/") {
+		return nil, fmt.Errorf("unexpected $ref format: %s", ref)
+	}
+	rootTypeName := ref[len("#/$defs/"):]
+
+	// Get the root definition
+	rootDef, ok := defs[rootTypeName].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("root definition %s not found in $defs", rootTypeName)
+	}
+
+	// Create flattened schema with root definition at top level
+	result := make(map[string]any)
+	for k, v := range rootDef {
+		result[k] = v
+	}
+
+	// Add $defs for nested types (excluding root type to avoid duplication)
+	if len(defs) > 1 {
+		result["$defs"] = defs
+	}
+
+	return result, nil
 }
 
 // GenerateJSON generates JSON Schema as JSON string
@@ -64,6 +123,9 @@ func (g *Generator[T]) enhanceSchemaWithValidation(schema *jsonschema.Schema) {
 
 	// Enhance each property with validation metadata
 	g.enhanceProperties(actualSchema, fieldOptions)
+
+	// Enhance all nested definitions
+	g.enhanceAllDefinitions(schema)
 }
 
 // fieldOption is a local interface for accessing field option properties
@@ -157,6 +219,162 @@ func (g *Generator[T]) reflectVariantType(schema *jsonschema.Schema, variant any
 		} else {
 			schema.Definitions[variantDefName] = variantSchema
 		}
+	}
+}
+
+// enhanceAllDefinitions enhances all definitions in the schema with validation metadata
+func (g *Generator[T]) enhanceAllDefinitions(schema *jsonschema.Schema) {
+	if schema.Definitions == nil {
+		return
+	}
+
+	// Get the root type to walk through
+	var zero T
+	rootType := reflect.TypeOf(zero)
+
+	// Collect all struct types from the root type
+	structTypes := make(map[string]reflect.Type)
+	collectStructTypes(rootType, structTypes)
+
+	// Enhance each definition with its field options
+	for defName, defSchema := range schema.Definitions {
+		if structType, ok := structTypes[defName]; ok {
+			enhanceDefinitionWithType(defSchema, structType)
+		} else {
+			// Definition exists but we don't have its type - skip silently
+			// This can happen for union variant types added dynamically
+		}
+	}
+}
+
+// collectStructTypes recursively collects all struct types from a type
+func collectStructTypes(t reflect.Type, types map[string]reflect.Type) {
+	if t == nil {
+		return
+	}
+
+	// Handle pointers
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Only process structs
+	if t.Kind() != reflect.Struct {
+		return
+	}
+
+	// Add this type to the map
+	if t.Name() != "" {
+		types[t.Name()] = t
+	}
+
+	// Recursively process all struct fields
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldType := field.Type
+
+		// Handle slices/arrays
+		if fieldType.Kind() == reflect.Slice || fieldType.Kind() == reflect.Array {
+			fieldType = fieldType.Elem()
+		}
+
+		// Handle pointers
+		if fieldType.Kind() == reflect.Ptr {
+			fieldType = fieldType.Elem()
+		}
+
+		// Recursively collect struct types
+		if fieldType.Kind() == reflect.Struct {
+			collectStructTypes(fieldType, types)
+		}
+	}
+}
+
+// enhanceDefinitionWithType enhances a schema definition with field options from a type
+func enhanceDefinitionWithType(defSchema *jsonschema.Schema, t reflect.Type) {
+	if defSchema.Properties == nil {
+		return
+	}
+
+	// Create a zero value instance of the type
+	zeroValue := reflect.New(t).Interface()
+
+	// Use reflection to call Field* methods and get field options
+	v := reflect.ValueOf(zeroValue)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldName := field.Name
+
+		// Look for Field{Name}() method
+		methodName := "Field" + fieldName
+		method := v.MethodByName(methodName)
+		if !method.IsValid() {
+			continue
+		}
+
+		// Call the method to get field options
+		results := method.Call(nil)
+		if len(results) != 1 {
+			continue
+		}
+
+		// Get the result value and access Required_ and Constraints_ fields
+		optsValue := results[0]
+
+		// Access the Required_ field
+		requiredField := optsValue.FieldByName("Required_")
+		if !requiredField.IsValid() {
+			continue
+		}
+
+		isRequired, ok := requiredField.Interface().(bool)
+		if !ok {
+			continue
+		}
+
+		// Access the Constraints_ field
+		constraintsField := optsValue.FieldByName("Constraints_")
+		if !constraintsField.IsValid() {
+			continue
+		}
+
+		constraints, ok := constraintsField.Interface().(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Get JSON name from tag or use lowercase first letter
+		jsonTag := field.Tag.Get("json")
+		jsonName := fieldName
+		if jsonTag != "" {
+			// Parse JSON tag (handle cases like "field_name,omitempty")
+			if idx := strings.Index(jsonTag, ","); idx != -1 {
+				jsonName = jsonTag[:idx]
+			} else {
+				jsonName = jsonTag
+			}
+		} else {
+			jsonName = toLowerFirst(fieldName)
+		}
+
+		// Get the property from schema
+		prop, ok := defSchema.Properties.Get(jsonName)
+		if !ok || prop == nil {
+			// Try with original field name
+			prop, ok = defSchema.Properties.Get(fieldName)
+			if !ok || prop == nil {
+				continue
+			}
+			jsonName = fieldName
+		}
+
+		// Add required fields
+		if isRequired && !contains(defSchema.Required, jsonName) {
+			defSchema.Required = append(defSchema.Required, jsonName)
+		}
+
+		// Apply all constraints to property
+		applyConstraints(prop, constraints)
 	}
 }
 
@@ -352,7 +570,7 @@ func applyUnionConstraints(prop *jsonschema.Schema, constraints map[string]any) 
 	if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
 		if types, ok := anyOfTypes.([]any); ok {
 			for _, typeInstance := range types {
-				schema := createSchemaForType(typeInstance)
+				schema := createSchemaForType(reflect.TypeOf(typeInstance))
 				if schema != nil {
 					allSchemas = append(allSchemas, schema)
 				}
@@ -398,50 +616,8 @@ func applyUnionConstraints(prop *jsonschema.Schema, constraints map[string]any) 
 	}
 }
 
-// createSchemaForType creates a JSON Schema for a given Go type instance
-func createSchemaForType(typeInstance any) *jsonschema.Schema {
-	t := reflect.TypeOf(typeInstance)
-	if t == nil {
-		return nil
-	}
-
-	// Handle different kinds of types
-	switch t.Kind() {
-	case reflect.String:
-		return &jsonschema.Schema{Type: "string"}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return &jsonschema.Schema{Type: "integer"}
-	case reflect.Float32, reflect.Float64:
-		return &jsonschema.Schema{Type: "number"}
-	case reflect.Bool:
-		return &jsonschema.Schema{Type: "boolean"}
-	case reflect.Slice, reflect.Array:
-		// For slices/arrays, we need to create an array schema with items
-		elemType := t.Elem()
-		itemSchema := createSchemaForTypeReflect(elemType)
-		return &jsonschema.Schema{
-			Type:  "array",
-			Items: itemSchema,
-		}
-	case reflect.Map:
-		return &jsonschema.Schema{Type: "object"}
-	case reflect.Struct:
-		// For structs, create a reference to a definition
-		return &jsonschema.Schema{
-			Ref: fmt.Sprintf("#/$defs/%s", t.Name()),
-		}
-	case reflect.Pointer:
-		// Dereference pointer and recurse
-		return createSchemaForTypeReflect(t.Elem())
-	default:
-		// Fallback to any
-		return &jsonschema.Schema{}
-	}
-}
-
-// createSchemaForTypeReflect creates a JSON Schema from a reflect.Type
-func createSchemaForTypeReflect(t reflect.Type) *jsonschema.Schema {
+// createSchemaForType creates a JSON Schema from a reflect.Type
+func createSchemaForType(t reflect.Type) *jsonschema.Schema {
 	if t == nil {
 		return nil
 	}
@@ -458,7 +634,7 @@ func createSchemaForTypeReflect(t reflect.Type) *jsonschema.Schema {
 		return &jsonschema.Schema{Type: "boolean"}
 	case reflect.Slice, reflect.Array:
 		elemType := t.Elem()
-		itemSchema := createSchemaForTypeReflect(elemType)
+		itemSchema := createSchemaForType(elemType)
 		return &jsonschema.Schema{
 			Type:  "array",
 			Items: itemSchema,
@@ -470,7 +646,7 @@ func createSchemaForTypeReflect(t reflect.Type) *jsonschema.Schema {
 			Ref: fmt.Sprintf("#/$defs/%s", t.Name()),
 		}
 	case reflect.Pointer:
-		return createSchemaForTypeReflect(t.Elem())
+		return createSchemaForType(t.Elem())
 	default:
 		return &jsonschema.Schema{}
 	}
@@ -529,38 +705,4 @@ func GenerateWithOptions[T any](opts Options) (*jsonschema.Schema, error) {
 	}
 
 	return schema, nil
-}
-
-// GetFieldDescription returns the description from FieldOptions if available
-func GetFieldDescription[T any](fieldName string) string {
-	var zero T
-	typ := reflect.TypeOf(zero)
-
-	// Look for Field{Name}() method
-	ptrType := reflect.PointerTo(typ)
-	methodName := "Field" + fieldName
-	method, found := ptrType.MethodByName(methodName)
-	if !found {
-		return ""
-	}
-
-	// Call method to get options
-	result := method.Func.Call([]reflect.Value{reflect.New(typ)})
-	if len(result) == 0 {
-		return ""
-	}
-
-	// Try to extract description
-	optsValue := result[0]
-	constraintsField := optsValue.FieldByName("Constraints_")
-	if constraintsField.IsValid() && !constraintsField.IsNil() {
-		iter := constraintsField.MapRange()
-		for iter.Next() {
-			if iter.Key().String() == "description" {
-				return iter.Value().String()
-			}
-		}
-	}
-
-	return ""
 }

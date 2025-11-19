@@ -1,6 +1,7 @@
 package schema_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,6 +78,39 @@ func TestNestedSchemaGeneration(t *testing.T) {
 
 		if !strings.Contains(schemaJSON, "street") {
 			t.Error("schema should contain nested 'street' field")
+		}
+	})
+
+	t.Run("nested struct should have required fields", func(t *testing.T) {
+		s, err := sg.Generate()
+		if err != nil {
+			t.Fatalf("failed to generate schema: %v", err)
+		}
+
+		// Check parent struct (SchemaCompany) has required fields
+		companySchema := s.Definitions["SchemaCompany"]
+		if companySchema == nil {
+			t.Fatal("SchemaCompany definition not found")
+		}
+
+		expectedCompanyRequired := []string{"name", "address", "size"}
+		for _, field := range expectedCompanyRequired {
+			if !slices.Contains(companySchema.Required, field) {
+				t.Errorf("SchemaCompany should have '%s' in required array", field)
+			}
+		}
+
+		// Check nested struct (SchemaAddress) has required fields
+		addressSchema := s.Definitions["SchemaAddress"]
+		if addressSchema == nil {
+			t.Fatal("SchemaAddress definition not found")
+		}
+
+		expectedAddressRequired := []string{"street", "city", "zipCode"}
+		for _, field := range expectedAddressRequired {
+			if !slices.Contains(addressSchema.Required, field) {
+				t.Errorf("SchemaAddress should have '%s' in required array, got: %v", field, addressSchema.Required)
+			}
 		}
 	})
 }
