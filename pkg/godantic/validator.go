@@ -253,6 +253,11 @@ func (v *Validator[T]) validateWithPath(obj *T, path []string) []ValidationError
 			}
 		}
 
+		// Validate union constraints
+		if unionErr := v.validateUnionConstraints(value, opts.constraints, currentPath); unionErr != nil {
+			errs = append(errs, *unionErr)
+		}
+
 		// Recursively validate nested structs
 		if field.Kind() == reflect.Struct && !isBasicType(field.Type()) {
 			nestedErrs := v.validateNested(field, currentPath)
@@ -399,6 +404,151 @@ func isBasicType(t reflect.Type) bool {
 		return true
 	}
 
+	return false
+}
+
+// validateUnionConstraints validates union (anyOf) and discriminated union (oneOf) constraints
+func (v *Validator[T]) validateUnionConstraints(value any, constraints map[string]any, path []string) *ValidationError {
+	// Check for discriminated union first (more specific)
+	if discriminatorConstraint, ok := constraints[ConstraintDiscriminator]; ok {
+		if discMap, ok := discriminatorConstraint.(map[string]any); ok {
+			discriminatorField, _ := discMap["propertyName"].(string)
+			mapping, _ := discMap["mapping"].(map[string]any)
+
+			if discriminatorField != "" && mapping != nil {
+				// Value must be a struct
+				valReflect := reflect.ValueOf(value)
+				if valReflect.Kind() != reflect.Struct {
+					return &ValidationError{
+						Loc:     path,
+						Message: "discriminated union requires a struct type",
+						Type:    "constraint",
+					}
+				}
+
+				// Get the discriminator field value
+				discField := valReflect.FieldByName(discriminatorField)
+				if !discField.IsValid() {
+					return &ValidationError{
+						Loc:     path,
+						Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField),
+						Type:    "constraint",
+					}
+				}
+
+				discValue := fmt.Sprintf("%v", discField.Interface())
+
+				// Check if the discriminator value is in the allowed mapping
+				if _, ok := mapping[discValue]; !ok {
+					validValues := make([]string, 0, len(mapping))
+					for k := range mapping {
+						validValues = append(validValues, k)
+					}
+					return &ValidationError{
+						Loc:     path,
+						Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discValue, validValues),
+						Type:    "constraint",
+					}
+				}
+
+				// Valid discriminated union value
+				return nil
+			}
+		}
+	}
+
+	// Check for simple union (anyOf)
+	var allowedTypes []string
+	var complexTypes []any
+
+	// Collect primitive type constraints
+	if anyOf, ok := constraints[ConstraintAnyOf]; ok {
+		if anyOfSlice, ok := anyOf.([]map[string]string); ok {
+			for _, typeMap := range anyOfSlice {
+				if typeName, ok := typeMap["type"]; ok {
+					allowedTypes = append(allowedTypes, typeName)
+				}
+			}
+		}
+	}
+
+	// Collect complex type constraints
+	if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
+		if types, ok := anyOfTypes.([]any); ok {
+			complexTypes = types
+		}
+	}
+
+	// If no union constraints, validation passes
+	if len(allowedTypes) == 0 && len(complexTypes) == 0 {
+		return nil
+	}
+
+	// Get the actual type of the value
+	valReflect := reflect.ValueOf(value)
+	valType := valReflect.Type()
+
+	// Check against complex types first
+	for _, complexType := range complexTypes {
+		expectedType := reflect.TypeOf(complexType)
+		if valType == expectedType {
+			return nil // Match found
+		}
+		// Also check if value is a slice/array and the element types match
+		if valType.Kind() == reflect.Slice && expectedType.Kind() == reflect.Slice {
+			if valType.Elem() == expectedType.Elem() {
+				return nil // Match found
+			}
+		}
+	}
+
+	// Check against primitive types
+	for _, allowedType := range allowedTypes {
+		if matchesJSONSchemaType(valReflect, allowedType) {
+			return nil // Match found
+		}
+	}
+
+	// No match found
+	allTypes := append([]string{}, allowedTypes...)
+	for _, ct := range complexTypes {
+		allTypes = append(allTypes, reflect.TypeOf(ct).String())
+	}
+
+	return &ValidationError{
+		Loc:     path,
+		Message: fmt.Sprintf("value does not match any allowed type: %v", allTypes),
+		Type:    "constraint",
+	}
+}
+
+// matchesJSONSchemaType checks if a reflect.Value matches a JSON Schema type name
+func matchesJSONSchemaType(val reflect.Value, schemaType string) bool {
+	switch schemaType {
+	case "string":
+		return val.Kind() == reflect.String
+	case "integer":
+		switch val.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return true
+		}
+	case "number":
+		switch val.Kind() {
+		case reflect.Float32, reflect.Float64,
+			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return true
+		}
+	case "boolean":
+		return val.Kind() == reflect.Bool
+	case "object":
+		return val.Kind() == reflect.Map || val.Kind() == reflect.Struct
+	case "array":
+		return val.Kind() == reflect.Slice || val.Kind() == reflect.Array
+	case "null":
+		return !val.IsValid() || val.IsNil()
+	}
 	return false
 }
 

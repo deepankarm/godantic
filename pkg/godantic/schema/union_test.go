@@ -8,10 +8,8 @@ import (
 	"github.com/deepankarm/godantic/pkg/godantic/schema"
 )
 
-// Test Union (anyOf) - field can be multiple types
-
+// Test Union (anyOf) with primitive types
 type FlexibleConfig struct {
-	// Value can be string, integer, or object
 	Value any
 }
 
@@ -77,40 +75,51 @@ func TestUnionSchema(t *testing.T) {
 	}
 }
 
-// Test DiscriminatedUnion (oneOf with discriminator) - common pattern for API responses
+// Test DiscriminatedUnion (oneOf with discriminator) - real-world API response example
 
-type Cat struct {
-	Type string
-	Meow string
+type ResponseType interface {
+	GetStatus() string
 }
 
-type Dog struct {
-	Type string
-	Bark string
+type SuccessResponse struct {
+	Status string
+	Data   map[string]string
 }
 
-type Bird struct {
-	Type  string
-	Chirp string
+func (s SuccessResponse) GetStatus() string { return s.Status }
+
+type ErrorResponse struct {
+	Status  string
+	Message string
+	Code    int
 }
 
-type AnimalResponse struct {
-	Animal any
+func (e ErrorResponse) GetStatus() string { return e.Status }
+
+type PendingResponse struct {
+	Status   string
+	Progress int
 }
 
-func (a *AnimalResponse) FieldAnimal() godantic.FieldOptions[any] {
+func (p PendingResponse) GetStatus() string { return p.Status }
+
+type APIResult struct {
+	Response ResponseType
+}
+
+func (a *APIResult) FieldResponse() godantic.FieldOptions[ResponseType] {
 	return godantic.Field(
-		godantic.Required[any](),
-		godantic.DiscriminatedUnion[any]("Type", map[string]any{
-			"cat":  Cat{},
-			"dog":  Dog{},
-			"bird": Bird{},
+		godantic.Required[ResponseType](),
+		godantic.DiscriminatedUnion[ResponseType]("Status", map[string]any{
+			"success": SuccessResponse{},
+			"error":   ErrorResponse{},
+			"pending": PendingResponse{},
 		}),
-		godantic.Description[any]("The animal can be a cat, dog, or bird"),
+		godantic.Description[ResponseType]("API response - structure depends on Status field"),
 	)
 }
 
-// Test Union with complex types (structs, slices of structs)
+// Test Union with complex types (slices of structs)
 type TextInput struct {
 	Type string
 	Text string
@@ -122,7 +131,7 @@ type ImageInput struct {
 }
 
 type Payload struct {
-	Query any // Can be string or []TextInput or []ImageInput
+	Query any
 }
 
 func (q *Payload) FieldQuery() godantic.FieldOptions[any] {
@@ -144,8 +153,6 @@ func TestUnionWithComplexTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal schema: %v", err)
 	}
-
-	t.Logf("Schema JSON: %s", string(schemaJSON))
 
 	// Parse schema to verify structure
 	var schemaMap map[string]any
@@ -200,7 +207,7 @@ func TestUnionWithComplexTypes(t *testing.T) {
 
 // Test Union with mixed primitive and complex types
 type MixedPayload struct {
-	Data any // Can be string, integer, or []TextInput
+	Data any
 }
 
 func (m *MixedPayload) FieldData() godantic.FieldOptions[any] {
@@ -284,7 +291,7 @@ func TestUnionWithMixedTypes(t *testing.T) {
 }
 
 func TestDiscriminatedUnionSchema(t *testing.T) {
-	sg := schema.NewGenerator[AnimalResponse]()
+	sg := schema.NewGenerator[APIResult]()
 	generatedSchema, err := sg.Generate()
 	if err != nil {
 		t.Fatalf("Failed to generate schema: %v", err)
@@ -301,48 +308,59 @@ func TestDiscriminatedUnionSchema(t *testing.T) {
 		t.Fatalf("Failed to parse schema JSON: %v", err)
 	}
 
-	// Verify oneOf and discriminator are present for Animal field
+	// Verify oneOf and discriminator are present for Response field
 	defs, ok := schemaMap["$defs"].(map[string]any)
 	if !ok {
 		t.Fatal("$defs not found in schema")
 	}
 
-	animalResponse, ok := defs["AnimalResponse"].(map[string]any)
+	apiResult, ok := defs["APIResult"].(map[string]any)
 	if !ok {
-		t.Fatal("AnimalResponse not found in $defs")
+		t.Fatal("APIResult not found in $defs")
 	}
 
-	properties, ok := animalResponse["properties"].(map[string]any)
+	properties, ok := apiResult["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("properties not found in AnimalResponse")
+		t.Fatal("properties not found in APIResult")
 	}
 
-	animalField, ok := properties["Animal"].(map[string]any)
+	responseField, ok := properties["Response"].(map[string]any)
 	if !ok {
-		t.Fatal("Animal field not found in properties")
+		t.Fatal("Response field not found in properties")
 	}
 
-	oneOf, ok := animalField["oneOf"].([]any)
+	oneOf, ok := responseField["oneOf"].([]any)
 	if !ok {
-		t.Fatal("oneOf not found in Animal field")
+		t.Fatal("oneOf not found in Response field")
 	}
 
 	if len(oneOf) != 3 {
 		t.Errorf("Expected 3 types in oneOf, got %d", len(oneOf))
 	}
 
-	discriminator, ok := animalField["discriminator"].(map[string]any)
+	discriminator, ok := responseField["discriminator"].(map[string]any)
 	if !ok {
-		t.Fatal("discriminator not found in Animal field")
+		t.Fatal("discriminator not found in Response field")
 	}
 
 	propertyName, ok := discriminator["propertyName"].(string)
-	if !ok || propertyName != "Type" {
-		t.Errorf("Expected discriminator propertyName to be 'Type', got %v", propertyName)
+	if !ok || propertyName != "Status" {
+		t.Errorf("Expected discriminator propertyName to be 'Status', got %v", propertyName)
 	}
 
 	// Verify description is present
-	if desc, ok := animalField["description"].(string); !ok || desc == "" {
-		t.Error("Description not found or empty in Animal field")
+	if desc, ok := responseField["description"].(string); !ok || desc == "" {
+		t.Error("Description not found or empty in Response field")
+	}
+
+	// Verify all response type definitions exist
+	if _, ok := defs["SuccessResponse"]; !ok {
+		t.Error("SuccessResponse definition not found in $defs")
+	}
+	if _, ok := defs["ErrorResponse"]; !ok {
+		t.Error("ErrorResponse definition not found in $defs")
+	}
+	if _, ok := defs["PendingResponse"]; !ok {
+		t.Error("PendingResponse definition not found in $defs")
 	}
 }

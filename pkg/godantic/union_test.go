@@ -7,7 +7,6 @@ import (
 )
 
 type FlexibleConfig struct {
-	// Value can be string, integer, or object
 	Value any
 }
 
@@ -42,6 +41,16 @@ func TestUnion(t *testing.T) {
 			config:  FlexibleConfig{Value: map[string]any{"key": "value"}},
 			wantErr: false,
 		},
+		{
+			name:    "boolean value should fail",
+			config:  FlexibleConfig{Value: true},
+			wantErr: true,
+		},
+		{
+			name:    "array value should fail",
+			config:  FlexibleConfig{Value: []string{"a", "b"}},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -54,74 +63,142 @@ func TestUnion(t *testing.T) {
 	}
 }
 
-type Cat struct {
-	Type string
-	Meow string
+// Test discriminated unions with real-world API response example
+type ResponseType interface {
+	GetStatus() string
 }
 
-type Dog struct {
-	Type string
-	Bark string
+type SuccessResponse struct {
+	Status string // "success"
+	Data   map[string]string
 }
 
-type Bird struct {
-	Type  string
-	Chirp string
+func (s SuccessResponse) GetStatus() string { return s.Status }
+
+type ErrorResponse struct {
+	Status  string // "error"
+	Message string
+	Code    int
 }
 
-type AnimalResponse struct {
-	Animal any
+func (e ErrorResponse) GetStatus() string { return e.Status }
+
+type PendingResponse struct {
+	Status   string // "pending"
+	Progress int
 }
 
-func (a *AnimalResponse) FieldAnimal() godantic.FieldOptions[any] {
+func (p PendingResponse) GetStatus() string { return p.Status }
+
+type InvalidResponse struct {
+	Status string // "invalid"
+	Reason string
+}
+
+func (i InvalidResponse) GetStatus() string { return i.Status }
+
+type APIResult struct {
+	Response ResponseType
+}
+
+func (a *APIResult) FieldResponse() godantic.FieldOptions[ResponseType] {
 	return godantic.Field(
-		godantic.Required[any](),
-		godantic.DiscriminatedUnion[any]("Type", map[string]any{
-			"cat":  Cat{},
-			"dog":  Dog{},
-			"bird": Bird{},
+		godantic.Required[ResponseType](),
+		godantic.DiscriminatedUnion[ResponseType]("Status", map[string]any{
+			"success": SuccessResponse{},
+			"error":   ErrorResponse{},
+			"pending": PendingResponse{},
+			// invalid response is not in the discriminator mapping
 		}),
-		godantic.Description[any]("The animal can be a cat, dog, or bird"),
+		godantic.Description[ResponseType]("API response - structure depends on Status field"),
 	)
 }
 
-func TestDiscriminatedUnion(t *testing.T) {
-	validator := godantic.NewValidator[AnimalResponse]()
+func TestDiscriminatedUnionSemantics(t *testing.T) {
+	validator := godantic.NewValidator[APIResult]()
 
 	tests := []struct {
 		name    string
-		animal  AnimalResponse
+		result  APIResult
 		wantErr bool
 	}{
 		{
-			name:    "cat should pass",
-			animal:  AnimalResponse{Animal: Cat{Type: "cat", Meow: "meow"}},
+			name: "success response with status='success'",
+			result: APIResult{
+				Response: SuccessResponse{
+					Status: "success",
+					Data:   map[string]string{"user_id": "123"},
+				},
+			},
 			wantErr: false,
 		},
 		{
-			name:    "dog should pass",
-			animal:  AnimalResponse{Animal: Dog{Type: "dog", Bark: "woof"}},
+			name: "error response with status='error'",
+			result: APIResult{
+				Response: ErrorResponse{
+					Status:  "error",
+					Message: "Not found",
+					Code:    404,
+				},
+			},
 			wantErr: false,
 		},
 		{
-			name:    "bird should pass",
-			animal:  AnimalResponse{Animal: Bird{Type: "bird", Chirp: "tweet"}},
+			name: "pending response with status='pending'",
+			result: APIResult{
+				Response: PendingResponse{
+					Status:   "pending",
+					Progress: 75,
+				},
+			},
 			wantErr: false,
+		},
+		{
+			name: "invalid discriminator: empty string",
+			result: APIResult{
+				Response: ErrorResponse{
+					Status:  "", // Empty
+					Message: "Something failed",
+					Code:    500,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid discriminator: typo in value",
+			result: APIResult{
+				Response: PendingResponse{
+					Status:   "pendin", // Typo
+					Progress: 50,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "type implements interface but not in discriminator mapping",
+			result: APIResult{
+				Response: InvalidResponse{
+					Status: "invalid",
+					Reason: "Something went wrong",
+				},
+			},
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			errs := validator.Validate(&tt.animal)
-			if (len(errs) > 0) != tt.wantErr {
+			errs := validator.Validate(&tt.result)
+			hasErr := len(errs) > 0
+
+			if hasErr != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", errs, tt.wantErr)
 			}
 		})
 	}
 }
 
-// Test complex union scenario - mixing union types with other constraints
-
+// Test mixing union types with other constraints (OneOf + Union)
 type APIResponse struct {
 	Status  string
 	Payload any
