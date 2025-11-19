@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -141,14 +140,9 @@ Action items:
 		log.Fatalf("OpenAI API error: %v", err)
 	}
 
-	// Unmarshal and validate response
-	var meeting MeetingSummary
-	if err := json.Unmarshal([]byte(completion.Choices[0].Message.Content), &meeting); err != nil {
-		log.Fatalf("Failed to parse response: %v", err)
-	}
-
 	validator := godantic.NewValidator[MeetingSummary]()
-	if errs := validator.Validate(&meeting); len(errs) > 0 {
+	meeting, errs := validator.ValidateJSON([]byte(completion.Choices[0].Message.Content))
+	if len(errs) > 0 {
 		fmt.Println("Validation errors:")
 		for _, e := range errs {
 			fmt.Printf("  %v: %s\n", e.Loc, e.Message)
