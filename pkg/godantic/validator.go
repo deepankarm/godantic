@@ -165,43 +165,43 @@ func (v *Validator[T]) scanFieldOptions() {
 
 // extractFieldOptions extracts validation info from FieldOptions[T] using reflection
 func (v *Validator[T]) extractFieldOptions(optsValue reflect.Value) *fieldOptionHolder {
-	holder := &fieldOptionHolder{
-		required:    optsValue.FieldByName("Required_").Bool(),
-		validators:  []func(any) error{},
-		constraints: make(map[string]any),
-	}
-
-	// Extract constraints map
-	constraintsField := optsValue.FieldByName("Constraints_")
-	if constraintsField.IsValid() && !constraintsField.IsNil() {
-		// Copy constraints map
-		iter := constraintsField.MapRange()
-		for iter.Next() {
-			key := iter.Key().String()
-			value := iter.Value().Interface()
-			holder.constraints[key] = value
-		}
-	}
-
-	// Extract validators using reflection
-	validatorsField := optsValue.FieldByName("Validators_")
-	if validatorsField.IsValid() && validatorsField.Len() > 0 {
-		for j := 0; j < validatorsField.Len(); j++ {
-			validatorFunc := validatorsField.Index(j)
-			// Wrap the typed validator in a type-erased one
-			holder.validators = append(holder.validators, func(val any) error {
-				// Call the validator using reflection
-				results := validatorFunc.Call([]reflect.Value{reflect.ValueOf(val)})
-				if len(results) > 0 && !results[0].IsNil() {
-					return results[0].Interface().(error)
+				holder := &fieldOptionHolder{
+					required:    optsValue.FieldByName("Required_").Bool(),
+					validators:  []func(any) error{},
+					constraints: make(map[string]any),
 				}
-				return nil
-			})
-		}
-	}
+
+				// Extract constraints map
+				constraintsField := optsValue.FieldByName("Constraints_")
+				if constraintsField.IsValid() && !constraintsField.IsNil() {
+					// Copy constraints map
+					iter := constraintsField.MapRange()
+					for iter.Next() {
+						key := iter.Key().String()
+						value := iter.Value().Interface()
+						holder.constraints[key] = value
+					}
+				}
+
+				// Extract validators using reflection
+				validatorsField := optsValue.FieldByName("Validators_")
+				if validatorsField.IsValid() && validatorsField.Len() > 0 {
+					for j := 0; j < validatorsField.Len(); j++ {
+						validatorFunc := validatorsField.Index(j)
+						// Wrap the typed validator in a type-erased one
+						holder.validators = append(holder.validators, func(val any) error {
+							// Call the validator using reflection
+							results := validatorFunc.Call([]reflect.Value{reflect.ValueOf(val)})
+							if len(results) > 0 && !results[0].IsNil() {
+								return results[0].Interface().(error)
+							}
+							return nil
+						})
+					}
+				}
 
 	return holder
-}
+			}
 
 func (v *Validator[T]) Validate(obj *T) []ValidationError {
 	return v.validateWithPath(obj, []string{})
@@ -243,8 +243,8 @@ func (v *Validator[T]) validateWithPath(obj *T, path []string) []ValidationError
 		}
 
 		// Run validators for non-zero values
-		for _, validator := range opts.validators {
-			if err := validator(value); err != nil {
+			for _, validator := range opts.validators {
+				if err := validator(value); err != nil {
 				errs = append(errs, ValidationError{
 					Loc:     currentPath,
 					Message: err.Error(),
@@ -262,7 +262,7 @@ func (v *Validator[T]) validateWithPath(obj *T, path []string) []ValidationError
 		if field.Kind() == reflect.Struct && !isBasicType(field.Type()) {
 			nestedErrs := v.validateNested(field, currentPath)
 			errs = append(errs, nestedErrs...)
-		}
+				}
 
 		// Validate pointer to struct
 		if field.Kind() == reflect.Pointer && !field.IsNil() && field.Elem().Kind() == reflect.Struct {

@@ -1,0 +1,24 @@
+package schema
+
+import (
+	"github.com/invopop/jsonschema"
+)
+
+// findActualSchema finds the actual schema definition (might be in $defs)
+func findActualSchema(schema *jsonschema.Schema) *jsonschema.Schema {
+	if len(schema.Definitions) > 0 {
+		// Get first definition
+		for _, def := range schema.Definitions {
+			return def
+		}
+	}
+	return schema
+}
+
+// toLowerFirst converts first letter to lowercase
+func toLowerFirst(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return string(s[0]+32) + s[1:]
+}
