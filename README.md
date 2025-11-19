@@ -2,7 +2,7 @@
 
 **Validation and schema generation in one place.** Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic), Godantic brings type-safe validation and automatic JSON Schema generation to Go — without struct tags.
 
-Most Go validation libraries use struct tags, requiring separate tools for validation and schema generation. This creates duplication, limits flexibility, and makes testing difficult. Godantic solves this by defining both validation and schema in `Field{FieldName}()` methods:
+Build Go APIs and LLM integrations with proper `anyOf`/`oneOf` schema support. Define validation rules and JSON Schema together in `Field{FieldName}()` methods:
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
@@ -14,13 +14,13 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 }
 ```
 
-**Benefits:**
-- Single source of truth for validation + schema
-- Full Go language power (conditionals, custom functions, external calls)
-- Type-safe with generics (compile-time checks)
-- Support for both simple unions (anyOf) and discriminated unions (oneOf)
-- Testable validation logic
-- No tag parsing, easier debugging
+**Key Features:**
+- **Single source of truth**: Validation + JSON Schema in one place
+- **Union type support**: Generate `anyOf`/`oneOf` schemas for LLM integrations and OpenAPI
+- **Type-safe**: Compile-time checks with Go generics
+- **Flexible**: Full Go language power (conditionals, custom logic)
+- **Testable**: No magic strings, just methods you can unit test
+- **Tag-free**: No struct tag parsing, easier debugging
 
 ```bash
 go get github.com/deepankarm/godantic
@@ -112,72 +112,107 @@ func (u *User) FieldPassword() godantic.FieldOptions[string] {
 
 ### Union Types
 
-#### Simple Union
+Go doesn't have native union types, and that's by design. However, when building systems that interact with external APIs, LLMs, or generate OpenAPI schemas, you often need to express "this field can be one of several types" in JSON Schema.
 
-Simple union with primitive types. This generates a `anyOf` schema with the given types.
+Godantic provides **runtime validation and JSON Schema generation** for union-like patterns using Go's existing type system (`any` and interfaces).
+
+**1. Simple Unions (`anyOf`) - For `any` fields**
+
+Runtime validation + schema generation for fields that accept multiple types:
 
 ```go
-type Config struct {
-    Value any  // Can be string, integer, or object
+type APIRequest struct {
+    Query any  // Accept string OR array of inputs
 }
 
-func (c *Config) FieldValue() godantic.FieldOptions[any] {
+func (r *APIRequest) FieldQuery() godantic.FieldOptions[any] {
     return godantic.Field(
-        godantic.Union[any]("string", "integer", "object"),
-        godantic.Description[any]("Can be a string, number, or object"),
+        godantic.Union[any]("string", []TextInput{}, []ImageInput{}),
+        godantic.Description[any]("Text query or structured inputs"),
     )
 }
 ```
 
-#### Complex Union
-
-Union with complex types (structs, slices). This generates a `anyOf` schema with the given types.
-
-```go
-type QueryPayload struct {
-    Query any  // Can be string or []TextInput or []ImageInput
+**Generated JSON Schema:**
+```json
+{
+  "Query": {
+    "anyOf": [
+      {"type": "string"},
+      {"type": "array", "items": {"$ref": "#/$defs/TextInput"}},
+      {"type": "array", "items": {"$ref": "#/$defs/ImageInput"}}
+    ]
+  }
 }
-
-func (q *QueryPayload) FieldQuery() godantic.FieldOptions[any] {
-    return godantic.Field(
-        godantic.Union[any]("", []TextInput{}, []ImageInput{}),  // "" = string type
-        godantic.Description[any]("Query can be string or array of inputs"),
-    )
-}
-
-// Mix primitive and complex types
-type MixedData struct {
-    Data any  // Can be string, integer, or []CustomStruct
-}
-
-func (m *MixedData) FieldData() godantic.FieldOptions[any] {
-    return godantic.Field(
-        godantic.Union[any]("string", "integer", []CustomStruct{}),
-        godantic.Description[any]("Flexible data field"),
-    )
-}
-
 ```
 
-#### Discriminated Union
+**2. Discriminated Unions (`oneOf`) - For interface fields**
 
-Discriminated union with discriminator field (type determined by discriminator field). This generates a `oneOf` schema with a discriminator field.
+Runtime validation + schema generation with discriminator field (OpenAPI 3.1, LLM tool calls):
 
 ```go
-type Response struct {
-    Animal any  // Can be Cat, Dog, or Bird
+type ResponseType interface {
+    GetStatus() string
 }
 
-func (r *Response) FieldAnimal() godantic.FieldOptions[any] {
+type SuccessResponse struct {
+    Status string            // Must be "success"
+    Data   map[string]string
+}
+
+type ErrorResponse struct {
+    Status  string  // Must be "error"
+    Message string
+    Code    int
+}
+
+type APIResult struct {
+    Response ResponseType  // Compile-time type safety via interface
+}
+
+func (a *APIResult) FieldResponse() godantic.FieldOptions[ResponseType] {
     return godantic.Field(
-        godantic.DiscriminatedUnion[any]("type", map[string]any{
-            "cat":  Cat{},
-            "dog":  Dog{},
-            "bird": Bird{},
+        godantic.DiscriminatedUnion[ResponseType]("Status", map[string]any{
+            "success": SuccessResponse{},
+            "error":   ErrorResponse{},
         }),
     )
 }
 ```
+
+**Generated JSON Schema:**
+```json
+{
+  "Response": {
+    "oneOf": [
+      {"$ref": "#/$defs/SuccessResponse"},
+      {"$ref": "#/$defs/ErrorResponse"}
+    ],
+    "discriminator": {
+      "propertyName": "Status",
+      "mapping": {
+        "success": "#/$defs/SuccessResponse",
+        "error": "#/$defs/ErrorResponse"
+      }
+    }
+  }
+}
+```
+
+**What validation provides:**
+
+- Validates `Status` field is one of `["success", "error"]`
+- Catches typos: `Status: "succes"` → validation error
+- Prevents invalid states: `ErrorResponse{Status: "success"}` → validation error
+- Works with Go's type system (interfaces for compile-time safety)
+- Generates proper JSON Schema for external tools
+
+**Real-world benefits:**
+
+- **LLM integrations**: Send proper schemas for structured outputs (OpenAI, Anthropic, Gemini)
+- **OpenAPI generation**: Create API specs that generate type-safe clients
+- **API validation**: Catch data inconsistencies at runtime
+- **Interoperability**: Work with systems that expect union types (TypeScript, Pydantic)
 
 ### JSON Schema Generation
 
@@ -195,6 +230,17 @@ jsonSchema, err := sg.GenerateJSON()
 
 All validation constraints (min, max, pattern, etc.) are automatically included in the schema.
 
+**For LLM APIs (OpenAI, Gemini, Claude):**
+
+LLM providers require a "flattened" schema format where the root object definition is at the top level instead of behind a `$ref`:
+
+```go
+// Generate flattened schema for LLM APIs
+flatSchema, err := sg.GenerateFlattened()
+```
+
+This promotes the root object to the top level while preserving `$defs` for nested types, making it compatible with structured output APIs.
+
 ### Complex Structures
 
 Works with embedded structs, nested structs, pointers, slices, and maps:
@@ -207,6 +253,56 @@ type Company struct {
     Settings map[string]int // Map
 }
 ```
+
+## LLM Structured Output
+
+**Godantic is an excellent companion for LLM structured outputs.** Use it to:
+1. **Generate JSON Schema** from your Go types (with all constraints and union types)
+2. **Send it to LLM APIs** (OpenAI, Gemini, Claude) to guide response structure
+3. **Validate the LLM response** to ensure it matches your schema and constraints
+
+**Complete workflow:**
+
+```go
+import (
+    "github.com/deepankarm/godantic/"
+    "github.com/deepankarm/godantic/schema"
+)
+
+// 1. Define your response structure
+type TaskList struct {
+    Tasks []Task
+}
+
+func (t *TaskList) FieldTasks() godantic.FieldOptions[[]Task] {
+    return godantic.Field(
+        godantic.Required[[]Task](),
+        godantic.MinItems[Task](1),
+    )
+}
+
+// 2. Generate flattened schema for LLM
+schemaGen := schema.NewGenerator[TaskList]()
+flatSchema, _ := schemaGen.GenerateFlattened()
+
+// 3. Send to LLM API (OpenAI, Gemini, Claude)
+response := callLLM(prompt, flatSchema)
+
+// 4. Validate LLM response
+validator := godantic.NewValidator[TaskList]()
+var result TaskList
+json.Unmarshal(response, &result)
+if errs := validator.Validate(&result); len(errs) > 0 {
+    // Handle validation errors
+}
+```
+
+**Why this matters:**
+- LLMs sometimes return invalid data (missing fields, wrong types, out-of-range values)
+- Godantic catches these issues before they reach your business logic
+- Same schema definition for both generation and validation (single source of truth)
+
+See [`examples/`](./examples/) for complete working examples with OpenAI and Gemini.
 
 ## Available Constraints
 
@@ -278,51 +374,16 @@ godantic.Validate(func(val T) error {
 
 Zero values (empty string, 0, nil) are treated as "not set" for required field checks.
 
-## Examples
-
-### Basic Validation
-
-```go
-validator := godantic.NewValidator[User]()
-user := User{
-    Email:    "test@example.com",
-    Username: "john_doe",
-    Age:      25,
-}
-if errs := validator.Validate(&user); len(errs) > 0 {
-    for _, err := range errs {
-        // handle error
-    }
-}
-```
-
-### Schema Generation
-
-```go
-type User struct {
-    Name  string `json:"name"`
-    Email string `json:"email"`
-    Age   int    `json:"age"`
-}
-
-func (u *User) FieldName() godantic.FieldOptions[string] {
-    return godantic.Field(
-        godantic.Required[string](),
-        godantic.Description[string]("User's full name"),
-        godantic.MinLen(2),
-        godantic.MaxLen(50),
-    )
-}
-
-sg := schema.NewGenerator[User]()
-jsonSchema, err := sg.GenerateJSON()
-```
 
 ## Testing
 
 ```bash
 go test ./... -v -cover
 ```
+
+## Examples
+
+Check out [`examples/`](./examples/) for complete working examples.
 
 ---
 
