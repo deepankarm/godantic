@@ -212,6 +212,78 @@ func (a *APIResult) FieldResponse() godantic.FieldOptions[ResponseType] {
 - **API validation**: Catch data inconsistencies at runtime
 - **Interoperability**: Work with systems that expect union types (TypeScript, Pydantic)
 
+### Validating interfaces
+
+Automatic type routing for interface types based on discriminator fields. Useful for polymorphic API requests, payment methods, or any domain where you need runtime type selection.
+
+```go
+type PaymentType string
+
+const (
+    PaymentTypeCreditCard   PaymentType = "credit_card"
+    PaymentTypePayPal       PaymentType = "paypal"
+    PaymentTypeBankTransfer PaymentType = "bank_transfer"
+)
+
+type PaymentMethod interface {
+    GetType() PaymentType
+}
+
+type CreditCardPayment struct {
+    Type       PaymentType `json:"type"`
+    CardNumber string      `json:"card_number"`
+}
+
+type PayPalPayment struct {
+    Type  PaymentType `json:"type"`
+    Email string      `json:"email"`
+}
+
+type BankTransferPayment struct {
+    Type        PaymentType `json:"type"`
+    AccountName string      `json:"account_name"`
+}
+
+// Create validator with discriminator
+validator := godantic.NewValidator[PaymentMethod](
+    godantic.WithDiscriminatorTyped("type", map[PaymentType]any{
+        PaymentTypeCreditCard:   CreditCardPayment{},
+        PaymentTypePayPal:       PayPalPayment{},
+        PaymentTypeBankTransfer: BankTransferPayment{},
+    }),
+)
+
+// Automatically routes to correct type based on "type" field
+payment, errs := validator.ValidateJSON(jsonData)
+
+// Type switch for handling
+switch p := (*payment).(type) {
+case CreditCardPayment:
+    fmt.Printf("Credit card: %s\n", p.CardNumber)
+case PayPalPayment:
+    fmt.Printf("PayPal: %s\n", p.Email)
+case BankTransferPayment:
+    fmt.Printf("Bank: %s\n", p.AccountName)
+}
+```
+
+**How it works:**
+
+1. Examines discriminator field (`"type"`) to determine concrete type
+2. Unmarshals JSON into the appropriate struct (e.g., `CreditCardPayment`)
+3. Validates all fields according to their Field methods
+4. Applies default values if defined
+5. Returns as interface type with proper concrete value
+
+**Key benefits:**
+
+- No manual discriminator routing code required
+- Compile-time type safety via Go interfaces
+- All field validation rules applied automatically
+- Clean separation of validation logic from business logic
+
+See [`examples/payment-methods/`](./examples/payment-methods/) for a complete working example.
+
 ### JSON Schema Generation
 
 Generate JSON Schema without struct tags:
@@ -300,7 +372,7 @@ if errs := validator.Validate(&result); len(errs) > 0 {
 - Godantic catches these issues before they reach your business logic
 - Same schema definition for both generation and validation (single source of truth)
 
-See [`examples/`](./examples/) for complete working examples with OpenAI and Gemini.
+See [`examples/openai-structured-output/`](./examples/openai-structured-output/) and [`examples/gemini-structured-output/`](./examples/gemini-structured-output/) for complete working examples.
 
 ## Available Constraints
 
@@ -381,7 +453,11 @@ go test ./... -v -cover
 
 ## Examples
 
-Check out [`examples/`](./examples/) for complete working examples.
+Check out [`examples/`](./examples/) for complete working examples:
+
+- **[`openai-structured-output/`](./examples/openai-structured-output/)** - Using godantic with OpenAI's structured output API to extract meeting summaries from text
+- **[`gemini-structured-output/`](./examples/gemini-structured-output/)** - Using godantic with Google Gemini to parse task lists with enums, dates, and unions  
+- **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions at the interface level
 
 ---
 
