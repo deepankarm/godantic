@@ -107,7 +107,7 @@ func main() {
 		log.Fatalf("Failed to generate schema: %v", err)
 	}
 
-	meetingTranscript := `Team standup on November 19, 2024. Present: Alice, Bob, and Charlie.
+	meetingTranscript := `Team standup on November 19, 2025. Present: Alice, Bob, and Charlie.
 Alice completed the authentication module and it's ready for review.
 Bob is working on the API documentation and expects to finish by end of week.
 Charlie reported a critical bug in the payment processing - needs immediate attention.
@@ -158,4 +158,15 @@ Action items:
 	for i, item := range meeting.ActionItems {
 		fmt.Printf("  %d. %s (assigned: %s, deadline: %s)\n", i+1, item.Task, item.Assignee, item.Deadline)
 	}
+
+	/*
+		Meeting: Team Standup (2025-11-19)
+		Attendees: Alice, Bob, Charlie
+		Summary: The team discussed the progress on current tasks. Alice has completed the authentication module, Bob is finalizing the API documentation, and Charlie identified a critical bug in payment processing that requires urgent resolution.
+
+		Action Items:
+		  1. Fix the payment bug. (assigned: Bob, deadline: 2025-11-20)
+		  2. Review Bob's API documentation. (assigned: Alice, deadline: 2025-11-22)
+		  3. Investigate database performance issues. (assigned: Charlie, deadline: 2025-11-22)
+	*/
 }

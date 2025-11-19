@@ -1,8 +1,9 @@
 # Godantic
 
-**Validation and schema generation in one place.** Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic), Godantic brings type-safe validation and automatic JSON Schema generation to Go — without struct tags.
+**Validation and schema generation in one place.** 
 
-Build Go APIs and LLM integrations with proper `anyOf`/`oneOf` schema support. Define validation rules and JSON Schema together in `Field{FieldName}()` methods:
+Godantic provides runtime validation and automatic JSON Schema generation without struct tags. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic). Built for developers working with LLM APIs (OpenAI, Anthropic, Gemini), building REST APIs with OpenAPI specs, or validating complex structured data in Go.
+
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
@@ -14,13 +15,12 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 }
 ```
 
-**Key Features:**
-- **Single source of truth**: Validation + JSON Schema in one place
-- **Union type support**: Generate `anyOf`/`oneOf` schemas for LLM integrations and OpenAPI
-- **Type-safe**: Compile-time checks with Go generics
-- **Flexible**: Full Go language power (conditionals, custom logic)
-- **Testable**: No magic strings, just methods you can unit test
-- **Tag-free**: No struct tag parsing, easier debugging
+**Why Godantic?:**
+- **Single source of truth**: Define validation rules once, use them for both runtime checks and schema generation
+- **Beyond struct tags**: Validation libraries and JSON Schema generators use different tag syntaxes. Godantic uses Go code, so your IDE, tests, and debugger all work naturally. Critical when iterating on LLM schemas.
+- **Union type support**: Generate proper `anyOf`/`oneOf` schemas—critical for LLM structured outputs and OpenAPI
+- **Type-safe**: Go generics catch errors at compile time instead of runtime
+- **Testable**: Validation is plain Go code you can unit test
 
 ```bash
 go get github.com/deepankarm/godantic

@@ -214,5 +214,32 @@ There's a critical bug in the login flow that's blocking the QA team - needs imm
 			fmt.Printf("   Tags: %v\n", task.Tags)
 		}
 		fmt.Println()
+
+		/*
+			Extracted 4 tasks:
+
+			1. Finalize UI Designs
+			   Status: To Do | Priority: High
+			   Assigned to: Sarah
+			   Due: 2025-12-29T17:00:00Z
+			   Estimate: 8h 0m (Estimated 8 hours of work.)
+			   Tags: [ui design mobile]
+
+			2. Backend API Integration
+			   Status: In Progress | Priority: Medium
+			   Assigned to: Mike
+			   Estimate: 3h 30m (3 hours of coding plus 30 minutes of testing.)
+			   Tags: [backend api integration]
+
+			3. Write User Documentation
+			   Status: To Do | Priority: Low
+			   Estimate: 2 days
+			   Tags: [documentation writing]
+
+			4. Fix Critical Bug in Login Flow
+			   Status: To Do | Priority: Critical
+			   Estimate: 1-2 hours
+			   Tags: [bug login qa critical]
+		*/
 	}
 }
