@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"strings"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
@@ -138,4 +139,65 @@ func GenerateWithOptions[T any](opts Options) (*jsonschema.Schema, error) {
 type fieldOption interface {
 	Required() bool
 	Constraints() map[string]any
+}
+
+// GenerateForType generates a JSON schema for any reflect.Type
+// This is useful for generating schemas dynamically without compile-time generics
+func GenerateForType(t reflect.Type) (map[string]any, error) {
+	// Create a zero instance
+	var instance any
+	if t.Kind() == reflect.Pointer {
+		instance = reflect.New(t.Elem()).Interface()
+	} else {
+		instance = reflect.New(t).Interface()
+	}
+
+	// Create reflector with godantic settings
+	reflector := &jsonschema.Reflector{
+		AllowAdditionalProperties:  false,
+		RequiredFromJSONSchemaTags: true,
+	}
+
+	// Generate base schema
+	schema := reflector.Reflect(instance)
+
+	// Enhance with godantic validation metadata
+	enhanceSchemaWithValidationForType(schema, t)
+
+	// Convert to map
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		return nil, err
+	}
+
+	var schemaMap map[string]any
+	if err := json.Unmarshal(schemaJSON, &schemaMap); err != nil {
+		return nil, err
+	}
+
+	return schemaMap, nil
+}
+
+// enhanceSchemaWithValidationForType enhances schema with validation metadata for a specific type
+func enhanceSchemaWithValidationForType(schema *jsonschema.Schema, t reflect.Type) {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return
+	}
+
+	// Collect all struct types
+	types := make(map[string]reflect.Type)
+	godantic.CollectStructTypes(t, types)
+
+	// Enhance all definitions with field options
+	if schema.Definitions != nil {
+		for defName, defSchema := range schema.Definitions {
+			if structType, ok := types[defName]; ok {
+				enhanceDefinitionWithType(defSchema, structType)
+			}
+		}
+	}
 }

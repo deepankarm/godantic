@@ -434,9 +434,16 @@ func validateFieldsWithReflection(
 			}
 		}
 
-		// Skip validation for zero values (except structs which we always validate)
+		// Skip validation for zero values if:
+		// 1. Field has a default (will be applied later), OR
+		// 2. Field is not required (zero value means "not provided" for optional fields)
+		// Otherwise: validate zero values (they may have been explicitly provided)
 		if field.IsZero() && !isStruct {
-			continue
+			_, hasDefault := opts.constraints[ConstraintDefault]
+			if hasDefault || !opts.required {
+				continue
+			}
+			// Field is required with no default: validate the zero value (could be explicit, like id=0)
 		}
 
 		// Run validators
