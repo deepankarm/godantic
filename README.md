@@ -408,6 +408,78 @@ if errs := validator.Validate(&result); len(errs) > 0 {
 
 See [`examples/openai-structured-output/`](./examples/openai-structured-output/) and [`examples/gemini-structured-output/`](./examples/gemini-structured-output/) for complete working examples.
 
+## Gin Integration (gingodantic)
+
+**Automatic OpenAPI spec generation and validation for Gin APIs.** Define your request/response types once with godantic, get OpenAPI specs and validation for free.
+
+```go
+import "github.com/deepankarm/godantic/pkg/gingodantic"
+
+type CreateUserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func (c *CreateUserRequest) FieldName() godantic.FieldOptions[string] {
+    return godantic.Field(
+        godantic.Required[string](),
+        godantic.MinLen(2),
+    )
+}
+
+func (c *CreateUserRequest) FieldEmail() godantic.FieldOptions[string] {
+    return godantic.Field(
+        godantic.Required[string](),
+        godantic.Email(),
+    )
+}
+
+// Setup
+router := gin.Default()
+api := gingodantic.New("User API", "1.0.0")
+
+// Register endpoint with schema
+router.POST("/users",
+    api.OpenAPISchema("POST", "/users",
+        gingodantic.WithSummary("Create user"),
+        gingodantic.WithRequest[CreateUserRequest](),  // Enables validation
+        gingodantic.WithResponse[UserResponse](201, "Created"),
+    ),
+    func(c *gin.Context) {
+        req, _ := gingodantic.GetValidated[CreateUserRequest](c)
+        // req is validated and ready to use
+    },
+)
+
+// Serve OpenAPI spec and Swagger UI
+router.GET("/openapi.json", api.OpenAPIHandler())
+router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
+```
+
+**Features:**
+
+- **Automatic validation**: Request bodies, query params, path params, headers, and cookies
+- **OpenAPI 3.0.3 generation**: Complete spec with all parameter types and constraints
+- **Type-safe helpers**: `GetValidated[T]()`, `GetValidatedQuery[T]()`, `GetValidatedPath[T]()`, etc.
+- **Validation by default**: Enabled automatically when request types are specified
+- **Swagger UI included**: Built-in handler for API documentation
+- **Zero boilerplate**: No manual schema writing or validation middleware
+
+**Parameter types supported:**
+
+```go
+gingodantic.WithRequest[T]()        // Request body
+gingodantic.WithQueryParams[T]()    // Query parameters
+gingodantic.WithPathParams[T]()     // Path parameters (:id)
+gingodantic.WithHeaderParams[T]()   // Request headers
+gingodantic.WithCookieParams[T]()   // Cookies
+gingodantic.WithResponse[T](code)   // Response schemas
+```
+
+All godantic constraints (min, max, regex, email, etc.) are automatically included in the OpenAPI spec.
+
+See [`examples/gin-api/`](./examples/gin-api/) for a complete working API with all parameter types.
+
 ## Available Constraints
 
 ```go
@@ -489,6 +561,7 @@ go test ./... -v -cover
 
 Check out [`examples/`](./examples/) for complete working examples:
 
+- **[`gin-api/`](./examples/gin-api/)** - Complete Gin REST API with automatic OpenAPI generation, validation for all parameter types (path, query, headers, cookies, body), and Swagger UI
 - **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions at the interface level
 - **[`openai-structured-output/`](./examples/openai-structured-output/)** - Using godantic with OpenAI's structured output API to extract meeting summaries from text
 - **[`gemini-structured-output/`](./examples/gemini-structured-output/)** - Using godantic with Google Gemini to parse task lists with enums, dates, and unions  

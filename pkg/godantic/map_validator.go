@@ -129,9 +129,10 @@ func convertStringToType(value string, fieldType reflect.Type) any {
 		return value
 
 	case reflect.Bool:
-		if value == "true" || value == "1" {
+		switch value {
+		case "true", "1":
 			return true
-		} else if value == "false" || value == "0" {
+		case "false", "0":
 			return false
 		}
 		return value
