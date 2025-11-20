@@ -451,9 +451,9 @@ router.POST("/users",
     },
 )
 
-// Serve OpenAPI spec and Swagger UI
+// Serve OpenAPI spec
 router.GET("/openapi.json", api.OpenAPIHandler())
-router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
+// TODO: Add Swagger UI
 ```
 
 **Features:**
