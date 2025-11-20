@@ -46,8 +46,15 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 		}}
 	}
 
+	// Handle pointer types - get the element type for field scanning
+	elemType := concreteType
+	if concreteType.Kind() == reflect.Pointer {
+		elemType = concreteType.Elem()
+	}
+
 	// Create a new instance of the concrete type
-	concretePtr := reflect.New(concreteType)
+	// Always create pointer to struct for unmarshaling
+	concretePtr := reflect.New(elemType)
 	concreteInstance := concretePtr.Interface()
 
 	// Unmarshal into the concrete type
@@ -59,8 +66,8 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 		}}
 	}
 
-	// Scan field options for the concrete type
-	concreteFieldOptions := scanner.scanFieldOptionsFromType(concreteType)
+	// Scan field options for the element type (not pointer)
+	concreteFieldOptions := scanner.scanFieldOptionsFromType(elemType)
 
 	// Apply defaults
 	if err := scanner.applyDefaultsToStruct(concretePtr, concreteFieldOptions); err != nil {
@@ -75,8 +82,13 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 	errs := validateFieldsWithReflection(concretePtr, concreteFieldOptions, []string{}, nil)
 
 	// Convert the concrete instance back to interface type T
-	concreteValue := concretePtr.Elem().Interface()
-	result := concreteValue.(T)
+	// If the original type was a pointer, use the pointer; otherwise use the value
+	var result T
+	if concreteType.Kind() == reflect.Pointer {
+		result = concretePtr.Interface().(T)
+	} else {
+		result = concretePtr.Elem().Interface().(T)
+	}
 
 	if len(errs) > 0 {
 		return &result, errs

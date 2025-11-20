@@ -379,3 +379,173 @@ func TestDiscriminatedUnion_WithStringKeys(t *testing.T) {
 		t.Errorf("Expected name 'Mittens', got %s", cat.Name)
 	}
 }
+
+// Tests for pointer types in discriminator map
+// These are critical when interface methods are defined on pointer receivers
+
+func TestDiscriminatedUnion_PointerVariants_Cat(t *testing.T) {
+	jsonData := `{
+		"species": "cat",
+		"name": "Shadow",
+		"lives_left": 5,
+		"is_indoor": true
+	}`
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  &Cat{},
+			SpeciesDog:  &Dog{},
+			SpeciesBird: &Bird{},
+		}),
+	)
+
+	animal, errs := validator.Marshal([]byte(jsonData))
+	if errs != nil {
+		t.Fatalf("Validation failed: %v", errs)
+	}
+
+	// With pointer variants, result should be *Cat
+	cat, ok := (*animal).(*Cat)
+	if !ok {
+		t.Fatalf("Expected *Cat, got %T", *animal)
+	}
+
+	if cat.Name != "Shadow" {
+		t.Errorf("Expected name 'Shadow', got %s", cat.Name)
+	}
+
+	if cat.LivesLeft != 5 {
+		t.Errorf("Expected 5 lives, got %d", cat.LivesLeft)
+	}
+
+	if cat.GetSpecies() != SpeciesCat {
+		t.Errorf("Expected species 'cat', got %s", cat.GetSpecies())
+	}
+}
+
+func TestDiscriminatedUnion_PointerVariants_Dog(t *testing.T) {
+	jsonData := `{
+		"species": "dog",
+		"name": "Max",
+		"breed": "Labrador",
+		"is_good": true
+	}`
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  &Cat{},
+			SpeciesDog:  &Dog{},
+			SpeciesBird: &Bird{},
+		}),
+	)
+
+	animal, errs := validator.Marshal([]byte(jsonData))
+	if errs != nil {
+		t.Fatalf("Validation failed: %v", errs)
+	}
+
+	dog, ok := (*animal).(*Dog)
+	if !ok {
+		t.Fatalf("Expected *Dog, got %T", *animal)
+	}
+
+	if dog.Name != "Max" {
+		t.Errorf("Expected name 'Max', got %s", dog.Name)
+	}
+
+	if dog.Breed != "Labrador" {
+		t.Errorf("Expected breed 'Labrador', got %s", dog.Breed)
+	}
+}
+
+func TestDiscriminatedUnion_PointerVariants_ValidationFailure(t *testing.T) {
+	jsonData := `{
+		"species": "cat",
+		"name": "Fluffy",
+		"lives_left": 15,
+		"is_indoor": true
+	}`
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  &Cat{},
+			SpeciesDog:  &Dog{},
+			SpeciesBird: &Bird{},
+		}),
+	)
+
+	_, errs := validator.Marshal([]byte(jsonData))
+	if errs == nil {
+		t.Fatal("Expected validation to fail for lives_left > 9")
+	}
+
+	// Should have constraint validation error (Max constraint on lives_left)
+	found := false
+	for _, err := range errs {
+		if err.Type == "constraint" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected constraint error, got: %v", errs)
+	}
+}
+
+func TestDiscriminatedUnion_PointerVariants_InvalidDiscriminator(t *testing.T) {
+	jsonData := `{
+		"species": "dragon",
+		"name": "Smaug"
+	}`
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  &Cat{},
+			SpeciesDog:  &Dog{},
+			SpeciesBird: &Bird{},
+		}),
+	)
+
+	_, errs := validator.Marshal([]byte(jsonData))
+	if errs == nil {
+		t.Fatal("Expected validation to fail for invalid discriminator")
+	}
+
+	// Should have discriminator_invalid error
+	if errs[0].Type != "discriminator_invalid" {
+		t.Errorf("Expected discriminator_invalid error, got: %s", errs[0].Type)
+	}
+}
+
+func TestDiscriminatedUnion_PointerVariants_MissingRequiredField(t *testing.T) {
+	jsonData := `{
+		"species": "cat",
+		"lives_left": 3,
+		"is_indoor": false
+	}`
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  &Cat{},
+			SpeciesDog:  &Dog{},
+			SpeciesBird: &Bird{},
+		}),
+	)
+
+	_, errs := validator.Marshal([]byte(jsonData))
+	if errs == nil {
+		t.Fatal("Expected validation to fail for missing required 'name' field")
+	}
+
+	// Should have required field error
+	found := false
+	for _, err := range errs {
+		if err.Type == "required" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected required error, got: %v", errs)
+	}
+}
