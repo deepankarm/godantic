@@ -180,7 +180,7 @@ There's a critical bug in the login flow that's blocking the QA team - needs imm
 	}
 
 	validator := godantic.NewValidator[TaskList]()
-	taskList, errs := validator.ValidateJSON([]byte(result.Text()))
+	taskList, errs := validator.Marshal([]byte(result.Text()))
 	if len(errs) > 0 {
 		fmt.Println("Validation errors:")
 		for _, e := range errs {

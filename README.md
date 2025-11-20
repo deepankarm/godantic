@@ -254,7 +254,7 @@ validator := godantic.NewValidator[PaymentMethod](
 )
 
 // Automatically routes to correct type based on "type" field
-payment, errs := validator.ValidateJSON(jsonData)
+payment, errs := validator.Marshal(jsonData)
 
 // Type switch for handling
 switch p := (*payment).(type) {
@@ -310,6 +310,40 @@ flatSchema, err := sg.GenerateFlattened()
 ```
 
 This promotes the root object to the top level while preserving `$defs` for nested types, making it compatible with structured output APIs.
+
+### JSON Marshal/Unmarshal with Validation
+
+Godantic provides convenient methods for working with JSON that automatically apply defaults and validate:
+
+**`Marshal` - JSON → Struct (with validation)**
+
+Unmarshals JSON, applies defaults, and validates in one step:
+
+```go
+validator := godantic.NewValidator[User]()
+
+// One-liner: unmarshal + defaults + validate
+user, errs := validator.Marshal(jsonData)
+if len(errs) > 0 {
+    // Handle validation errors
+}
+// user is ready to use with all defaults applied
+```
+
+**`Unmarshal` - Struct → JSON (with validation)**
+
+Validates, applies defaults, and marshals to JSON in one step:
+
+```go
+validator := godantic.NewValidator[User]()
+
+// One-liner: validate + defaults + marshal
+jsonData, errs := validator.Unmarshal(&user)
+if len(errs) > 0 {
+    // Handle validation errors
+}
+// jsonData is valid JSON with all defaults
+```
 
 ### Complex Structures
 

@@ -136,7 +136,7 @@ func TestDiscriminatedUnion_Cat(t *testing.T) {
 		}),
 	)
 
-	animal, errs := validator.ValidateJSON([]byte(jsonData))
+	animal, errs := validator.Marshal([]byte(jsonData))
 	if errs != nil {
 		t.Fatalf("Validation failed: %v", errs)
 	}
@@ -176,7 +176,7 @@ func TestDiscriminatedUnion_Dog(t *testing.T) {
 		}),
 	)
 
-	animal, errs := validator.ValidateJSON([]byte(jsonData))
+	animal, errs := validator.Marshal([]byte(jsonData))
 	if errs != nil {
 		t.Fatalf("Validation failed: %v", errs)
 	}
@@ -211,7 +211,7 @@ func TestDiscriminatedUnion_Bird(t *testing.T) {
 		}),
 	)
 
-	animal, errs := validator.ValidateJSON([]byte(jsonData))
+	animal, errs := validator.Marshal([]byte(jsonData))
 	if errs != nil {
 		t.Fatalf("Validation failed: %v", errs)
 	}
@@ -244,7 +244,7 @@ func TestDiscriminatedUnion_InvalidDiscriminator(t *testing.T) {
 		}),
 	)
 
-	_, errs := validator.ValidateJSON([]byte(jsonData))
+	_, errs := validator.Marshal([]byte(jsonData))
 	if errs == nil {
 		t.Fatal("Expected validation to fail for invalid discriminator")
 	}
@@ -267,7 +267,7 @@ func TestDiscriminatedUnion_MissingDiscriminator(t *testing.T) {
 		}),
 	)
 
-	_, errs := validator.ValidateJSON([]byte(jsonData))
+	_, errs := validator.Marshal([]byte(jsonData))
 	if errs == nil {
 		t.Fatal("Expected validation to fail for missing discriminator")
 	}
@@ -292,7 +292,7 @@ func TestDiscriminatedUnion_ValidationFailure(t *testing.T) {
 		}),
 	)
 
-	_, errs := validator.ValidateJSON([]byte(jsonData))
+	_, errs := validator.Marshal([]byte(jsonData))
 	if errs == nil {
 		t.Fatal("Expected validation to fail for lives_left > 9")
 	}
@@ -329,7 +329,7 @@ func TestDiscriminatedUnion_MissingRequiredField(t *testing.T) {
 		}),
 	)
 
-	_, errs := validator.ValidateJSON([]byte(jsonData))
+	_, errs := validator.Marshal([]byte(jsonData))
 	if errs == nil {
 		t.Fatal("Expected validation to fail for missing required 'breed' field")
 	}
@@ -365,7 +365,7 @@ func TestDiscriminatedUnion_WithStringKeys(t *testing.T) {
 		}),
 	)
 
-	animal, errs := validator.ValidateJSON([]byte(jsonData))
+	animal, errs := validator.Marshal([]byte(jsonData))
 	if errs != nil {
 		t.Fatalf("Validation failed: %v", errs)
 	}

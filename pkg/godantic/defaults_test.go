@@ -204,8 +204,8 @@ func TestDefaultsWithJSON(t *testing.T) {
 	})
 }
 
-// Test ValidateJSON convenience method
-func TestValidateJSON(t *testing.T) {
+// Test Marshal convenience method
+func TestMarshal(t *testing.T) {
 	validator := godantic.NewValidator[ServerSettings]()
 
 	t.Run("valid JSON with all fields", func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestValidateJSON(t *testing.T) {
 			"description": "Production server"
 		}`)
 
-		settings, errs := validator.ValidateJSON(jsonData)
+		settings, errs := validator.Marshal(jsonData)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -238,7 +238,7 @@ func TestValidateJSON(t *testing.T) {
 	t.Run("JSON with missing fields gets defaults applied", func(t *testing.T) {
 		jsonData := []byte(`{"name": "staging"}`)
 
-		settings, errs := validator.ValidateJSON(jsonData)
+		settings, errs := validator.Marshal(jsonData)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -258,7 +258,7 @@ func TestValidateJSON(t *testing.T) {
 	t.Run("invalid JSON returns error", func(t *testing.T) {
 		jsonData := []byte(`{invalid json}`)
 
-		settings, errs := validator.ValidateJSON(jsonData)
+		settings, errs := validator.Marshal(jsonData)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 error, got %d", len(errs))
 		}
@@ -277,7 +277,7 @@ func TestValidateJSON(t *testing.T) {
 		// Missing required Name field
 		jsonData := []byte(`{"port": 3000}`)
 
-		settings, errs := validator.ValidateJSON(jsonData)
+		settings, errs := validator.Marshal(jsonData)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 validation error, got %d: %v", len(errs), errs)
 		}
@@ -308,7 +308,7 @@ func TestValidateJSON(t *testing.T) {
 		jsonData := []byte(`{"name": "test", "port": 9000}`)
 
 		// One-liner: unmarshal + defaults + validate
-		settings, errs := validator.ValidateJSON(jsonData)
+		settings, errs := validator.Marshal(jsonData)
 
 		if len(errs) != 0 {
 			t.Fatalf("validation failed: %v", errs)
@@ -330,7 +330,7 @@ func TestValidateJSON(t *testing.T) {
 		// JSON with explicit false - indistinguishable from omitted field
 		jsonData := []byte(`{"name": "test", "enabled": false}`)
 
-		settings, errs := validator.ValidateJSON(jsonData)
+		settings, errs := validator.Marshal(jsonData)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -357,6 +357,153 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// Test Unmarshal convenience method
+func TestUnmarshal(t *testing.T) {
+	validator := godantic.NewValidator[ServerSettings]()
+
+	t.Run("valid struct marshals to JSON", func(t *testing.T) {
+		settings := ServerSettings{
+			Name:        "production",
+			Type:        "default",
+			Port:        3000,
+			Enabled:     true,
+			Tags:        []string{"api", "v2"},
+			MaxRetries:  5,
+			Description: "Production server",
+		}
+
+		jsonData, errs := validator.Unmarshal(&settings)
+		if len(errs) != 0 {
+			t.Fatalf("expected no errors, got: %v", errs)
+		}
+
+		// Verify JSON is valid
+		var result map[string]any
+		err := json.Unmarshal(jsonData, &result)
+		if err != nil {
+			t.Fatalf("failed to unmarshal result JSON: %v", err)
+		}
+
+		if result["Name"] != "production" {
+			t.Errorf("expected Name='production', got '%v'", result["Name"])
+		}
+		if result["Port"] != float64(3000) {
+			t.Errorf("expected Port=3000, got %v", result["Port"])
+		}
+	})
+
+	t.Run("struct with missing fields gets defaults applied before marshaling", func(t *testing.T) {
+		settings := ServerSettings{
+			Name: "staging",
+			// Other fields are zero values, should get defaults
+		}
+
+		jsonData, errs := validator.Unmarshal(&settings)
+		if len(errs) != 0 {
+			t.Fatalf("expected no errors, got: %v", errs)
+		}
+
+		// Parse JSON to verify defaults were applied
+		var result ServerSettings
+		err := json.Unmarshal(jsonData, &result)
+		if err != nil {
+			t.Fatalf("failed to unmarshal result JSON: %v", err)
+		}
+
+		if result.Type != "default" {
+			t.Errorf("expected Type='default' (default applied), got '%s'", result.Type)
+		}
+		if result.Port != 8080 {
+			t.Errorf("expected Port=8080 (default applied), got %d", result.Port)
+		}
+		if !result.Enabled {
+			t.Error("expected Enabled=true (default applied)")
+		}
+	})
+
+	t.Run("invalid struct returns validation errors", func(t *testing.T) {
+		settings := ServerSettings{
+			// Missing required Name field
+			Type: "default",
+			Port: 3000,
+		}
+
+		jsonData, errs := validator.Unmarshal(&settings)
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 validation error, got %d: %v", len(errs), errs)
+		}
+
+		if jsonData != nil {
+			t.Error("expected nil JSON data on validation error")
+		}
+
+		// Error should be about missing Name
+		errMsg := errs[0].Error()
+		if !contains(errMsg, "Name") || !contains(errMsg, "required") {
+			t.Errorf("expected Name required error, got: %v", errMsg)
+		}
+	})
+
+	t.Run("struct with constraint violations returns errors", func(t *testing.T) {
+		settings := ServerSettings{
+			Name: "test",
+			Type: "default",
+			Port: 70000, // Exceeds max of 65535
+		}
+
+		jsonData, errs := validator.Unmarshal(&settings)
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 validation error, got %d: %v", len(errs), errs)
+		}
+
+		if jsonData != nil {
+			t.Error("expected nil JSON data on validation error")
+		}
+
+		// Error should be about Port constraint
+		errMsg := errs[0].Error()
+		if !contains(errMsg, "Port") {
+			t.Errorf("expected Port constraint error, got: %v", errMsg)
+		}
+	})
+
+	t.Run("round-trip: Marshal then Unmarshal", func(t *testing.T) {
+		// Start with JSON
+		originalJSON := []byte(`{"name": "test-server", "port": 9000}`)
+
+		// Marshal: JSON -> struct (with defaults and validation)
+		settings, errs := validator.Marshal(originalJSON)
+		if len(errs) != 0 {
+			t.Fatalf("Marshal failed: %v", errs)
+		}
+
+		// Unmarshal: struct -> JSON (with validation)
+		resultJSON, errs := validator.Unmarshal(settings)
+		if len(errs) != 0 {
+			t.Fatalf("Unmarshal failed: %v", errs)
+		}
+
+		// Parse result to verify
+		var result ServerSettings
+		err := json.Unmarshal(resultJSON, &result)
+		if err != nil {
+			t.Fatalf("failed to parse result JSON: %v", err)
+		}
+
+		// Verify data integrity
+		if result.Name != "test-server" {
+			t.Errorf("expected Name='test-server', got '%s'", result.Name)
+		}
+		if result.Port != 9000 {
+			t.Errorf("expected Port=9000, got %d", result.Port)
+		}
+		// Defaults should be present
+		if result.Type != "default" {
+			t.Errorf("expected Type='default', got '%s'", result.Type)
+		}
+	})
 }
 
 // Test that defaults work with type-level validation

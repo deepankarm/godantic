@@ -67,7 +67,7 @@ func main() {
 
 	// Valid credit card payment
 	creditCardJSON := `{"type": "credit_card", "card_number": "4532015112830366"}`
-	payment, errs := validator.ValidateJSON([]byte(creditCardJSON))
+	payment, errs := validator.Marshal([]byte(creditCardJSON))
 	if errs != nil {
 		fmt.Printf("Validation failed: %v\n", errs)
 	} else {
@@ -78,7 +78,7 @@ func main() {
 
 	// Valid PayPal payment
 	paypalJSON := `{"type": "paypal", "email": "user@example.com"}`
-	payment, errs = validator.ValidateJSON([]byte(paypalJSON))
+	payment, errs = validator.Marshal([]byte(paypalJSON))
 	if errs != nil {
 		fmt.Printf("Validation failed: %v\n", errs)
 	} else {
@@ -89,7 +89,7 @@ func main() {
 
 	// Invalid payment type
 	invalidJSON := `{"type": "cryptocurrency", "wallet": "0x1234"}`
-	_, errs = validator.ValidateJSON([]byte(invalidJSON))
+	_, errs = validator.Marshal([]byte(invalidJSON))
 	if errs != nil {
 		fmt.Printf("Invalid type error: %s\n", errs[0].Message)
 	}
@@ -102,7 +102,7 @@ func main() {
 	}
 
 	for _, paymentJSON := range payments {
-		payment, errs := validator.ValidateJSON([]byte(paymentJSON))
+		payment, errs := validator.Marshal([]byte(paymentJSON))
 		if errs != nil {
 			continue
 		}

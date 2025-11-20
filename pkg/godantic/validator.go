@@ -308,13 +308,13 @@ func (v *Validator[T]) ApplyDefaults(obj *T) error {
 	return scanner.applyDefaultsToStruct(objPtr, v.fieldOptions)
 }
 
-// ValidateJSON unmarshals JSON data, applies defaults, and validates.
+// Marshal unmarshals JSON data, applies defaults, and validates.
 // This is a convenience method that combines the three common steps:
 // 1. Unmarshal JSON into the struct (or route to correct type for discriminated unions)
 // 2. Apply default values to zero-valued fields
 // 3. Validate the struct
 // Returns the populated struct and any validation errors.
-func (v *Validator[T]) ValidateJSON(data []byte) (*T, ValidationErrors) {
+func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 	// Check if this is a discriminated union validator
 	if v.config.discriminator != nil {
 		return v.validateDiscriminatedUnion(data, v.config.discriminator)
@@ -344,6 +344,41 @@ func (v *Validator[T]) ValidateJSON(data []byte) (*T, ValidationErrors) {
 	}
 
 	return &obj, nil
+}
+
+// Unmarshal validates the struct, applies defaults, and marshals to JSON.
+// This is a convenience method that combines the three common steps:
+// 1. Validate the struct
+// 2. Apply default values to zero-valued fields
+// 3. Marshal the struct to JSON
+// Returns the JSON bytes and any validation errors.
+func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
+	// Validate first
+	errs := v.Validate(obj)
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
+	// Apply defaults to ensure all default values are set
+	if err := v.ApplyDefaults(obj); err != nil {
+		return nil, ValidationErrors{{
+			Loc:     []string{},
+			Message: fmt.Sprintf("apply defaults failed: %v", err),
+			Type:    "internal",
+		}}
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return nil, ValidationErrors{{
+			Loc:     []string{},
+			Message: fmt.Sprintf("json marshal failed: %v", err),
+			Type:    "json_encode",
+		}}
+	}
+
+	return data, nil
 }
 
 // FieldOptions returns the field options map (for schema generation)
