@@ -22,6 +22,30 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", strings.Join(e.Loc, "."), e.Message)
 }
 
+type ValidationErrors []ValidationError
+
+func (es ValidationErrors) Error() string {
+	if len(es) == 0 {
+		return "validation errors: (none)"
+	}
+	if len(es) == 1 {
+		return es[0].Error()
+	}
+	var msgs []string
+	for _, e := range es {
+		msgs = append(msgs, e.Error())
+	}
+	return fmt.Sprintf("validation errors (%d): %s", len(es), strings.Join(msgs, "; "))
+}
+
+func (es ValidationErrors) Unwrap() []error {
+	errs := make([]error, len(es))
+	for i, e := range es {
+		errs[i] = e
+	}
+	return errs
+}
+
 // Ordered is a constraint for types that support comparison
 type Ordered interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
@@ -118,12 +142,12 @@ func (v *Validator[T]) scanFieldOptions() {
 	v.fieldOptions = scanner.scanFieldOptionsFromType(typ)
 }
 
-func (v *Validator[T]) Validate(obj *T) []ValidationError {
+func (v *Validator[T]) Validate(obj *T) ValidationErrors {
 	return v.validateWithPath(obj, []string{})
 }
 
 // validateWithPath validates the struct and tracks the field path for nested validation
-func (v *Validator[T]) validateWithPath(obj *T, path []string) []ValidationError {
+func (v *Validator[T]) validateWithPath(obj *T, path []string) ValidationErrors {
 	objPtr := reflect.ValueOf(obj)
 	return validateFieldsWithReflection(objPtr, v.fieldOptions, path, v.validateUnionConstraints)
 }
@@ -290,7 +314,7 @@ func (v *Validator[T]) ApplyDefaults(obj *T) error {
 // 2. Apply default values to zero-valued fields
 // 3. Validate the struct
 // Returns the populated struct and any validation errors.
-func (v *Validator[T]) ValidateJSON(data []byte) (*T, []ValidationError) {
+func (v *Validator[T]) ValidateJSON(data []byte) (*T, ValidationErrors) {
 	// Check if this is a discriminated union validator
 	if v.config.discriminator != nil {
 		return v.validateDiscriminatedUnion(data, v.config.discriminator)
@@ -299,7 +323,7 @@ func (v *Validator[T]) ValidateJSON(data []byte) (*T, []ValidationError) {
 	// Standard struct validation
 	var obj T
 	if err := json.Unmarshal(data, &obj); err != nil {
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("json unmarshal failed: %v", err),
 			Type:    "json_decode",
@@ -307,7 +331,7 @@ func (v *Validator[T]) ValidateJSON(data []byte) (*T, []ValidationError) {
 	}
 
 	if err := v.ApplyDefaults(&obj); err != nil {
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("apply defaults failed: %v", err),
 			Type:    "internal",

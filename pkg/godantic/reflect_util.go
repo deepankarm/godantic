@@ -119,7 +119,7 @@ func (fs *fieldScanner) extractFieldOptions(optsValue reflect.Value) *fieldOptio
 
 // validateNestedStruct validates a nested struct field using reflection
 // This is shared between Validator and reflectValidator
-func (fs *fieldScanner) validateNestedStruct(field reflect.Value, parentPath []string, fieldOptions map[string]*fieldOptionHolder) []ValidationError {
+func (fs *fieldScanner) validateNestedStruct(field reflect.Value, parentPath []string, fieldOptions map[string]*fieldOptionHolder) ValidationErrors {
 	// Get the type of the nested struct
 	fieldType := field.Type()
 
@@ -140,7 +140,7 @@ func (fs *fieldScanner) validateNestedStruct(field reflect.Value, parentPath []s
 
 	// For nested validation, we need to scan the nested struct's Field methods
 	// and validate recursively
-	var errs []ValidationError
+	errs := make(ValidationErrors, 0)
 	ptrVal := field.Addr()
 
 	for i := 0; i < ptrType.NumMethod(); i++ {
@@ -383,8 +383,8 @@ func validateFieldsWithReflection(
 	fieldOptions map[string]*fieldOptionHolder,
 	path []string,
 	validateUnions func(value any, constraints map[string]any, path []string) *ValidationError,
-) []ValidationError {
-	var errs []ValidationError
+) ValidationErrors {
+	errs := make(ValidationErrors, 0)
 	val := objPtr.Elem()
 
 	for fieldName, opts := range fieldOptions {

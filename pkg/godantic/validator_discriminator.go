@@ -8,11 +8,11 @@ import (
 
 // validateDiscriminatedUnion handles validation for discriminated union types (interfaces)
 // It peeks at the discriminator field, determines the concrete type, and validates accordingly.
-func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminatorConfig) (*T, []ValidationError) {
+func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminatorConfig) (*T, ValidationErrors) {
 	// First, peek at the discriminator field to determine which concrete type to use
 	var peek map[string]any
 	if err := json.Unmarshal(data, &peek); err != nil {
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("json unmarshal failed: %v", err),
 			Type:    "json_decode",
@@ -22,7 +22,7 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 	// Get the discriminator value
 	discriminatorValue, ok := peek[cfg.field]
 	if !ok {
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{cfg.field},
 			Message: fmt.Sprintf("discriminator field '%s' not found", cfg.field),
 			Type:    "discriminator_missing",
@@ -39,7 +39,7 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 		for k := range cfg.variants {
 			validValues = append(validValues, k)
 		}
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{cfg.field},
 			Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discriminatorStr, validValues),
 			Type:    "discriminator_invalid",
@@ -52,7 +52,7 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 
 	// Unmarshal into the concrete type
 	if err := json.Unmarshal(data, concreteInstance); err != nil {
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("json unmarshal failed: %v", err),
 			Type:    "json_decode",
@@ -64,7 +64,7 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 
 	// Apply defaults
 	if err := scanner.applyDefaultsToStruct(concretePtr, concreteFieldOptions); err != nil {
-		return nil, []ValidationError{{
+		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("apply defaults failed: %v", err),
 			Type:    "internal",
