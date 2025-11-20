@@ -214,34 +214,35 @@ func createSchemaForType(t reflect.Type) *jsonschema.Schema {
 		return nil
 	}
 
-	switch t.Kind() {
-	case reflect.String:
-		return &jsonschema.Schema{Type: "string"}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return &jsonschema.Schema{Type: "integer"}
-	case reflect.Float32, reflect.Float64:
-		return &jsonschema.Schema{Type: "number"}
-	case reflect.Bool:
-		return &jsonschema.Schema{Type: "boolean"}
-	case reflect.Slice, reflect.Array:
+	// Handle pointer recursion
+	if t.Kind() == reflect.Pointer {
+		return createSchemaForType(t.Elem())
+	}
+
+	// Handle structs (use Ref)
+	if t.Kind() == reflect.Struct {
+		return &jsonschema.Schema{
+			Ref: fmt.Sprintf("#/$defs/%s", t.Name()),
+		}
+	}
+
+	// Handle arrays/slices
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		elemType := t.Elem()
 		itemSchema := createSchemaForType(elemType)
 		return &jsonschema.Schema{
 			Type:  "array",
 			Items: itemSchema,
 		}
-	case reflect.Map:
-		return &jsonschema.Schema{Type: "object"}
-	case reflect.Struct:
-		return &jsonschema.Schema{
-			Ref: fmt.Sprintf("#/$defs/%s", t.Name()),
-		}
-	case reflect.Pointer:
-		return createSchemaForType(t.Elem())
-	default:
-		return &jsonschema.Schema{}
 	}
+
+	// Handle primitives and maps using shared type mapping
+	typeName := godantic.GetJSONSchemaType(t)
+	if typeName != "" {
+		return &jsonschema.Schema{Type: typeName}
+	}
+
+	return &jsonschema.Schema{}
 }
 
 // toJSONNumber converts numeric values to json.Number

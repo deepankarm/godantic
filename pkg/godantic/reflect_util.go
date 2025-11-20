@@ -272,6 +272,110 @@ func (fs *fieldScanner) applyDefaultsToStruct(objPtr reflect.Value, fieldOptions
 // Global scanner instance for use across the package
 var scanner = &fieldScanner{}
 
+// FieldOptionInfo provides field validation info for schema generation
+type FieldOptionInfo struct {
+	Required    bool
+	Constraints map[string]any
+}
+
+// ScanTypeFieldOptions scans a reflect.Type for Field{Name}() methods
+// Returns a map of field name -> field option info
+// This is the public API for schema generation and other external uses
+func ScanTypeFieldOptions(t reflect.Type) map[string]FieldOptionInfo {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	internalOpts := scanner.scanFieldOptionsFromType(t)
+
+	// Convert to public API
+	result := make(map[string]FieldOptionInfo, len(internalOpts))
+	for fieldName, holder := range internalOpts {
+		result[fieldName] = FieldOptionInfo{
+			Required:    holder.required,
+			Constraints: holder.constraints,
+		}
+	}
+
+	return result
+}
+
+// CollectStructTypes recursively collects all struct types from a type
+// This is useful for schema generation and type analysis
+func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
+	if t == nil {
+		return
+	}
+
+	// Handle pointers
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	// Only process structs
+	if t.Kind() != reflect.Struct {
+		return
+	}
+
+	// Add this type to the map
+	if t.Name() != "" {
+		types[t.Name()] = t
+	}
+
+	// Recursively process all struct fields
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldType := field.Type
+
+		// Handle slices/arrays
+		if fieldType.Kind() == reflect.Slice || fieldType.Kind() == reflect.Array {
+			fieldType = fieldType.Elem()
+		}
+
+		// Handle pointers
+		if fieldType.Kind() == reflect.Pointer {
+			fieldType = fieldType.Elem()
+		}
+
+		// Recursively collect struct types
+		if fieldType.Kind() == reflect.Struct {
+			CollectStructTypes(fieldType, types)
+		}
+	}
+}
+
+// GetJSONSchemaType returns the JSON Schema type string for a Go type
+func GetJSONSchemaType(t reflect.Type) string {
+	if t == nil {
+		return ""
+	}
+
+	// Handle pointers
+	if t.Kind() == reflect.Pointer {
+		return GetJSONSchemaType(t.Elem())
+	}
+
+	switch t.Kind() {
+	case reflect.String:
+		return "string"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "integer"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Slice, reflect.Array:
+		return "array"
+	case reflect.Map, reflect.Struct:
+		return "object"
+	case reflect.Interface:
+		// Empty interface is any, which could be considered object or any
+		return "object"
+	}
+	return ""
+}
+
 // validateFieldsWithReflection validates struct fields using field options and reflection
 // This is the core validation loop used by both Validator and discriminated union validation
 func validateFieldsWithReflection(
@@ -359,76 +463,4 @@ func isBasicType(t reflect.Type) bool {
 	}
 
 	return false
-}
-
-// FieldOptionInfo provides field validation info for schema generation
-type FieldOptionInfo struct {
-	Required    bool
-	Constraints map[string]any
-}
-
-// ScanTypeFieldOptions scans a reflect.Type for Field{Name}() methods
-// Returns a map of field name -> field option info
-// This is the public API for schema generation and other external uses
-func ScanTypeFieldOptions(t reflect.Type) map[string]FieldOptionInfo {
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
-	internalOpts := scanner.scanFieldOptionsFromType(t)
-
-	// Convert to public API
-	result := make(map[string]FieldOptionInfo, len(internalOpts))
-	for fieldName, holder := range internalOpts {
-		result[fieldName] = FieldOptionInfo{
-			Required:    holder.required,
-			Constraints: holder.constraints,
-		}
-	}
-
-	return result
-}
-
-// CollectStructTypes recursively collects all struct types from a type
-// This is useful for schema generation and type analysis
-func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
-	if t == nil {
-		return
-	}
-
-	// Handle pointers
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	// Only process structs
-	if t.Kind() != reflect.Struct {
-		return
-	}
-
-	// Add this type to the map
-	if t.Name() != "" {
-		types[t.Name()] = t
-	}
-
-	// Recursively process all struct fields
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		fieldType := field.Type
-
-		// Handle slices/arrays
-		if fieldType.Kind() == reflect.Slice || fieldType.Kind() == reflect.Array {
-			fieldType = fieldType.Elem()
-		}
-
-		// Handle pointers
-		if fieldType.Kind() == reflect.Pointer {
-			fieldType = fieldType.Elem()
-		}
-
-		// Recursively collect struct types
-		if fieldType.Kind() == reflect.Struct {
-			CollectStructTypes(fieldType, types)
-		}
-	}
 }

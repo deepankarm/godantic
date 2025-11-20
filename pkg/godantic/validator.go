@@ -245,31 +245,34 @@ func (v *Validator[T]) validateUnionConstraints(value any, constraints map[strin
 
 // matchesJSONSchemaType checks if a reflect.Value matches a JSON Schema type name
 func matchesJSONSchemaType(val reflect.Value, schemaType string) bool {
-	switch schemaType {
-	case "string":
-		return val.Kind() == reflect.String
-	case "integer":
-		switch val.Kind() {
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	// Handle null check (value-based)
+	if schemaType == "null" {
+		if !val.IsValid() {
 			return true
 		}
-	case "number":
 		switch val.Kind() {
-		case reflect.Float32, reflect.Float64,
-			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return true
+		case reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+			return val.IsNil()
+		default:
+			return false
 		}
-	case "boolean":
-		return val.Kind() == reflect.Bool
-	case "object":
-		return val.Kind() == reflect.Map || val.Kind() == reflect.Struct
-	case "array":
-		return val.Kind() == reflect.Slice || val.Kind() == reflect.Array
-	case "null":
-		return !val.IsValid() || val.IsNil()
 	}
+
+	if !val.IsValid() {
+		return false
+	}
+
+	// Use shared type mapping
+	got := GetJSONSchemaType(val.Type())
+	if got == schemaType {
+		return true
+	}
+
+	// Special case: "number" schema type allows integer values
+	if schemaType == "number" && got == "integer" {
+		return true
+	}
+
 	return false
 }
 

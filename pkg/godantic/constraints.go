@@ -5,15 +5,21 @@ import (
 	"regexp"
 )
 
+// ensureConstraints initializes the Constraints_ map if it's nil
+func ensureConstraints[T any](fo FieldOptions[T]) FieldOptions[T] {
+	if fo.Constraints_ == nil {
+		fo.Constraints_ = make(map[string]any)
+	}
+	return fo
+}
+
 // Constraint functions for JSON Schema generation and validation
 // These functions use the With() pattern and store metadata in Constraints_
 
 // Description sets a description for the field in the schema
 func Description[T any](desc string) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintDescription] = desc
 		return fo
 	}
@@ -22,9 +28,7 @@ func Description[T any](desc string) func(FieldOptions[T]) FieldOptions[T] {
 // Example sets an example for the field in the schema
 func Example[T any](ex T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintExample] = ex
 		return fo
 	}
@@ -33,9 +37,7 @@ func Example[T any](ex T) func(FieldOptions[T]) FieldOptions[T] {
 // Min sets a minimum value constraint (for numbers and strings)
 func Min[T Ordered](min T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMinimum] = min
 
 		return fo.validateWith(func(val T) error {
@@ -50,9 +52,7 @@ func Min[T Ordered](min T) func(FieldOptions[T]) FieldOptions[T] {
 // Max sets a maximum value constraint (for numbers and strings)
 func Max[T Ordered](max T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMaximum] = max
 
 		return fo.validateWith(func(val T) error {
@@ -67,9 +67,7 @@ func Max[T Ordered](max T) func(FieldOptions[T]) FieldOptions[T] {
 // MinLen sets a minimum length constraint for strings
 func MinLen(min int) func(FieldOptions[string]) FieldOptions[string] {
 	return func(fo FieldOptions[string]) FieldOptions[string] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMinLength] = min
 
 		return fo.validateWith(func(val string) error {
@@ -84,9 +82,7 @@ func MinLen(min int) func(FieldOptions[string]) FieldOptions[string] {
 // MaxLen sets a maximum length constraint for strings
 func MaxLen(max int) func(FieldOptions[string]) FieldOptions[string] {
 	return func(fo FieldOptions[string]) FieldOptions[string] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMaxLength] = max
 
 		return fo.validateWith(func(val string) error {
@@ -102,9 +98,7 @@ func MaxLen(max int) func(FieldOptions[string]) FieldOptions[string] {
 func Regex(pattern string) func(FieldOptions[string]) FieldOptions[string] {
 	re := regexp.MustCompile(pattern)
 	return func(fo FieldOptions[string]) FieldOptions[string] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintPattern] = pattern
 
 		return fo.validateWith(func(val string) error {
@@ -129,9 +123,7 @@ func URL() func(FieldOptions[string]) FieldOptions[string] {
 // OneOf sets an enum constraint - value must be one of the allowed values
 func OneOf[T comparable](allowed ...T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintEnum] = allowed
 
 		return fo.validateWith(func(val T) error {
@@ -148,9 +140,7 @@ func OneOf[T comparable](allowed ...T) func(FieldOptions[T]) FieldOptions[T] {
 // MultipleOf sets a constraint that the value must be a multiple of the given number
 func MultipleOf[T Ordered](divisor T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMultipleOf] = divisor
 
 		return fo.validateWith(func(val T) error {
@@ -189,9 +179,7 @@ func MultipleOf[T Ordered](divisor T) func(FieldOptions[T]) FieldOptions[T] {
 // ReadOnly marks a field as read-only in the schema (doesn't affect validation)
 func ReadOnly[T any]() func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintReadOnly] = true
 		return fo
 	}
@@ -200,9 +188,7 @@ func ReadOnly[T any]() func(FieldOptions[T]) FieldOptions[T] {
 // WriteOnly marks a field as write-only in the schema (doesn't affect validation)
 func WriteOnly[T any]() func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintWriteOnly] = true
 		return fo
 	}
@@ -211,9 +197,7 @@ func WriteOnly[T any]() func(FieldOptions[T]) FieldOptions[T] {
 // Deprecated marks a field as deprecated in the schema (doesn't affect validation)
 func Deprecated[T any]() func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintDeprecated] = true
 		return fo
 	}
@@ -222,9 +206,7 @@ func Deprecated[T any]() func(FieldOptions[T]) FieldOptions[T] {
 // Title sets a title for the field in the schema
 func Title[T any](title string) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintTitle] = title
 		return fo
 	}
@@ -233,9 +215,7 @@ func Title[T any](title string) func(FieldOptions[T]) FieldOptions[T] {
 // Format sets a format hint for the field (e.g., "date-time", "email", "uri")
 func Format[T any](format string) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintFormat] = format
 		return fo
 	}
@@ -244,9 +224,7 @@ func Format[T any](format string) func(FieldOptions[T]) FieldOptions[T] {
 // ExclusiveMin sets an exclusive minimum constraint (value must be > min, not >=)
 func ExclusiveMin[T Ordered](min T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintExclusiveMinimum] = min
 
 		return fo.validateWith(func(val T) error {
@@ -261,9 +239,7 @@ func ExclusiveMin[T Ordered](min T) func(FieldOptions[T]) FieldOptions[T] {
 // ExclusiveMax sets an exclusive maximum constraint (value must be < max, not <=)
 func ExclusiveMax[T Ordered](max T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintExclusiveMaximum] = max
 
 		return fo.validateWith(func(val T) error {
@@ -278,9 +254,7 @@ func ExclusiveMax[T Ordered](max T) func(FieldOptions[T]) FieldOptions[T] {
 // MinItems sets a minimum number of items for arrays/slices
 func MinItems[T any](min int) func(FieldOptions[[]T]) FieldOptions[[]T] {
 	return func(fo FieldOptions[[]T]) FieldOptions[[]T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMinItems] = min
 
 		return fo.validateWith(func(val []T) error {
@@ -295,9 +269,7 @@ func MinItems[T any](min int) func(FieldOptions[[]T]) FieldOptions[[]T] {
 // MaxItems sets a maximum number of items for arrays/slices
 func MaxItems[T any](max int) func(FieldOptions[[]T]) FieldOptions[[]T] {
 	return func(fo FieldOptions[[]T]) FieldOptions[[]T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMaxItems] = max
 
 		return fo.validateWith(func(val []T) error {
@@ -312,9 +284,7 @@ func MaxItems[T any](max int) func(FieldOptions[[]T]) FieldOptions[[]T] {
 // UniqueItems ensures all items in a slice are unique
 func UniqueItems[T comparable]() func(FieldOptions[[]T]) FieldOptions[[]T] {
 	return func(fo FieldOptions[[]T]) FieldOptions[[]T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintUniqueItems] = true
 
 		return fo.validateWith(func(val []T) error {
@@ -333,9 +303,7 @@ func UniqueItems[T comparable]() func(FieldOptions[[]T]) FieldOptions[[]T] {
 // MinProperties sets a minimum number of properties for maps
 func MinProperties(min int) func(FieldOptions[map[string]any]) FieldOptions[map[string]any] {
 	return func(fo FieldOptions[map[string]any]) FieldOptions[map[string]any] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMinProperties] = min
 
 		return fo.validateWith(func(val map[string]any) error {
@@ -350,9 +318,7 @@ func MinProperties(min int) func(FieldOptions[map[string]any]) FieldOptions[map[
 // MaxProperties sets a maximum number of properties for maps
 func MaxProperties(max int) func(FieldOptions[map[string]any]) FieldOptions[map[string]any] {
 	return func(fo FieldOptions[map[string]any]) FieldOptions[map[string]any] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintMaxProperties] = max
 
 		return fo.validateWith(func(val map[string]any) error {
@@ -367,9 +333,7 @@ func MaxProperties(max int) func(FieldOptions[map[string]any]) FieldOptions[map[
 // Const sets a constant value constraint - the value must equal this exactly
 func Const[T comparable](value T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintConst] = value
 
 		return fo.validateWith(func(val T) error {
@@ -384,9 +348,7 @@ func Const[T comparable](value T) func(FieldOptions[T]) FieldOptions[T] {
 // Default sets a default value (schema metadata only, doesn't affect validation)
 func Default[T any](value T) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintDefault] = value
 		return fo
 	}
@@ -395,9 +357,7 @@ func Default[T any](value T) func(FieldOptions[T]) FieldOptions[T] {
 // ContentEncoding sets the content encoding for strings (e.g., "base64")
 func ContentEncoding(encoding string) func(FieldOptions[string]) FieldOptions[string] {
 	return func(fo FieldOptions[string]) FieldOptions[string] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintContentEncoding] = encoding
 		return fo
 	}
@@ -406,9 +366,7 @@ func ContentEncoding(encoding string) func(FieldOptions[string]) FieldOptions[st
 // ContentMediaType sets the content media type for strings (e.g., "application/json")
 func ContentMediaType(mediaType string) func(FieldOptions[string]) FieldOptions[string] {
 	return func(fo FieldOptions[string]) FieldOptions[string] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 		fo.Constraints_[ConstraintContentMediaType] = mediaType
 		return fo
 	}
@@ -431,9 +389,7 @@ func ContentMediaType(mediaType string) func(FieldOptions[string]) FieldOptions[
 //	Union[any](0, 1.5, true)                                     // mix of primitives via instances
 func Union[T any](types ...any) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 
 		// Separate string type names from complex type instances
 		var primitiveTypes []string
@@ -478,9 +434,7 @@ func Union[T any](types ...any) func(FieldOptions[T]) FieldOptions[T] {
 // Example: DiscriminatedUnion[any]("type", map[string]any{"cat": Cat{}, "dog": Dog{}})
 func DiscriminatedUnion[T any](discriminatorField string, variants map[string]any) func(FieldOptions[T]) FieldOptions[T] {
 	return func(fo FieldOptions[T]) FieldOptions[T] {
-		if fo.Constraints_ == nil {
-			fo.Constraints_ = make(map[string]any)
-		}
+		fo = ensureConstraints(fo)
 
 		// Store discriminator info for schema generation
 		fo.Constraints_[ConstraintDiscriminator] = map[string]any{
