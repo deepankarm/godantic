@@ -225,7 +225,7 @@ func (fs *fieldScanner) validateNestedStruct(field reflect.Value, parentPath []s
 		}
 
 		// Validate pointer to nested struct
-		if nestedField.Kind() == reflect.Ptr && !nestedField.IsNil() && nestedField.Elem().Kind() == reflect.Struct {
+		if nestedField.Kind() == reflect.Pointer && !nestedField.IsNil() && nestedField.Elem().Kind() == reflect.Struct {
 			nestedErrs := fs.validateNestedStruct(nestedField.Elem(), nestedFieldPath, fieldOptions)
 			errs = append(errs, nestedErrs...)
 		}
@@ -237,19 +237,20 @@ func (fs *fieldScanner) validateNestedStruct(field reflect.Value, parentPath []s
 func (fs *fieldScanner) applyDefaultsToStruct(objPtr reflect.Value, fieldOptions map[string]*fieldOptionHolder) error {
 	val := objPtr.Elem()
 
+	// First pass: apply defaults to primitive fields
 	for fieldName, opts := range fieldOptions {
 		field := val.FieldByName(fieldName)
-		if !field.IsValid() {
+		if !field.IsValid() || !field.CanSet() {
+			continue
+		}
+
+		// Skip structs in this pass
+		if field.Kind() == reflect.Struct && !isBasicType(field.Type()) {
 			continue
 		}
 
 		// Only apply default if field is zero value
 		if !field.IsZero() {
-			continue
-		}
-
-		// Check if field can be set
-		if !field.CanSet() {
 			continue
 		}
 
@@ -263,6 +264,24 @@ func (fs *fieldScanner) applyDefaultsToStruct(objPtr reflect.Value, fieldOptions
 		defaultReflect := reflect.ValueOf(defaultVal)
 		if defaultReflect.Type().AssignableTo(field.Type()) {
 			field.Set(defaultReflect)
+		}
+	}
+
+	// Second pass: recursively apply defaults to nested structs
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		if !field.CanSet() {
+			continue
+		}
+
+		// Recursively apply defaults to nested structs
+		if field.Kind() == reflect.Struct && !isBasicType(field.Type()) {
+			nestedFieldOptions := fs.scanFieldOptionsFromType(field.Type())
+			if len(nestedFieldOptions) > 0 {
+				if err := fs.applyDefaultsToStruct(field.Addr(), nestedFieldOptions); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -282,7 +301,7 @@ type FieldOptionInfo struct {
 // Returns a map of field name -> field option info
 // This is the public API for schema generation and other external uses
 func ScanTypeFieldOptions(t reflect.Type) map[string]FieldOptionInfo {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 

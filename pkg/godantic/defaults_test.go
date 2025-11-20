@@ -534,6 +534,49 @@ func (t *TaskWithDefaults) FieldName() godantic.FieldOptions[string] {
 	)
 }
 
+// Test types for nested defaults
+type NestedAddress struct {
+	City    string
+	Country string
+}
+
+type PersonWithAddress struct {
+	Name    string
+	Address NestedAddress
+}
+
+func (a *NestedAddress) FieldCity() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Default("Unknown City"))
+}
+
+func (a *NestedAddress) FieldCountry() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Default("Unknown Country"))
+}
+
+func (p *PersonWithAddress) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func TestNestedStructDefaults(t *testing.T) {
+	t.Run("nested struct defaults are applied", func(t *testing.T) {
+		jsonData := []byte(`{"name": "John"}`)
+		validator := godantic.NewValidator[PersonWithAddress]()
+
+		person, errs := validator.Marshal(jsonData)
+		if errs != nil {
+			t.Fatalf("Validation failed: %v", errs)
+		}
+
+		if person.Address.City != "Unknown City" {
+			t.Errorf("Expected City 'Unknown City', got '%s'", person.Address.City)
+		}
+
+		if person.Address.Country != "Unknown Country" {
+			t.Errorf("Expected Country 'Unknown Country', got '%s'", person.Address.Country)
+		}
+	})
+}
+
 func TestDefaultsWithTypeValidation(t *testing.T) {
 	validator := godantic.NewValidator[TaskWithDefaults]()
 
