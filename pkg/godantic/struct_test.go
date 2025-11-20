@@ -345,3 +345,55 @@ func TestPointerFields(t *testing.T) {
 		}
 	})
 }
+
+func TestNestedRequiredFieldErrors(t *testing.T) {
+	// Test that errors for required fields in nested structs show the full path
+	validator := godantic.NewValidator[ComplexUser]()
+
+	t.Run("nested struct with empty required fields shows specific path", func(t *testing.T) {
+		email := "test@example.com"
+		complex := ComplexUser{
+			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
+			Name:      "Test",
+			Email:     &email,
+			// HomeAddr has all empty required fields (Street, City, ZipCode)
+			HomeAddr: Address{Street: "", City: "", ZipCode: ""},
+			Age:      25,
+		}
+
+		errs := validator.Validate(&complex)
+		if len(errs) < 3 {
+			t.Fatalf("Expected at least 3 validation errors for empty Address fields, got %d: %v", len(errs), errs)
+		}
+
+		// Check that errors show the full path: HomeAddr.Street, HomeAddr.City, HomeAddr.ZipCode
+		// NOT just "HomeAddr: required field"
+		foundStreetError := false
+		foundCityError := false
+		foundZipCodeError := false
+
+		for _, err := range errs {
+			if len(err.Loc) == 2 && err.Loc[0] == "HomeAddr" {
+				if err.Loc[1] == "Street" {
+					foundStreetError = true
+				}
+				if err.Loc[1] == "City" {
+					foundCityError = true
+				}
+				if err.Loc[1] == "ZipCode" {
+					foundZipCodeError = true
+				}
+			}
+		}
+
+		if !foundStreetError {
+			t.Errorf("Expected 'HomeAddr.Street: required field' error, got: %v", errs)
+		}
+		if !foundCityError {
+			t.Errorf("Expected 'HomeAddr.City: required field' error, got: %v", errs)
+		}
+		if !foundZipCodeError {
+			t.Errorf("Expected 'HomeAddr.ZipCode: required field' error, got: %v", errs)
+		}
+	})
+}

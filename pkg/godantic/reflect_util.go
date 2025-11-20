@@ -396,20 +396,27 @@ func validateFieldsWithReflection(
 		currentPath := append(append([]string{}, path...), fieldName)
 		value := field.Interface()
 
-		// Check required fields
+		// Check if field is a struct type (for special handling)
+		isStruct := field.Kind() == reflect.Struct && !isBasicType(field.Type())
+		isPointerToStruct := field.Kind() == reflect.Pointer && !field.IsNil() && field.Elem().Kind() == reflect.Struct
+
+		// Check required fields (but don't skip nested struct validation)
 		if opts.required && field.IsZero() {
 			if _, hasDefault := opts.constraints[ConstraintDefault]; !hasDefault {
-				errs = append(errs, ValidationError{
-					Loc:     currentPath,
-					Message: "required field",
-					Type:    "required",
-				})
-				continue
+				// For structs, still validate nested fields to give more specific errors
+				if !isStruct {
+					errs = append(errs, ValidationError{
+						Loc:     currentPath,
+						Message: "required field",
+						Type:    "required",
+					})
+					continue
+				}
 			}
 		}
 
-		// Skip validation for zero values
-		if field.IsZero() {
+		// Skip validation for zero values (except structs which we always validate)
+		if field.IsZero() && !isStruct {
 			continue
 		}
 
@@ -431,14 +438,14 @@ func validateFieldsWithReflection(
 			}
 		}
 
-		// Recursively validate nested structs
-		if field.Kind() == reflect.Struct && !isBasicType(field.Type()) {
+		// Recursively validate nested structs (even if zero-valued)
+		if isStruct {
 			nestedErrs := scanner.validateNestedStruct(field, currentPath, fieldOptions)
 			errs = append(errs, nestedErrs...)
 		}
 
 		// Validate pointer to struct
-		if field.Kind() == reflect.Pointer && !field.IsNil() && field.Elem().Kind() == reflect.Struct {
+		if isPointerToStruct {
 			nestedErrs := scanner.validateNestedStruct(field.Elem(), currentPath, fieldOptions)
 			errs = append(errs, nestedErrs...)
 		}
