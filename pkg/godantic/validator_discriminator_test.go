@@ -1,6 +1,7 @@
 package godantic_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
@@ -547,5 +548,293 @@ func TestDiscriminatedUnion_PointerVariants_MissingRequiredField(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("Expected required error, got: %v", errs)
+	}
+}
+
+// Tests for Unmarshal (struct → JSON) with discriminated unions
+
+func TestDiscriminatedUnion_Unmarshal_Cat(t *testing.T) {
+	cat := Cat{
+		Species:   SpeciesCat,
+		Name:      "Whiskers",
+		LivesLeft: 7,
+		IsIndoor:  true,
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  Cat{},
+			SpeciesDog:  Dog{},
+			SpeciesBird: Bird{},
+		}),
+	)
+
+	var animal Animal = cat
+	jsonData, errs := validator.Unmarshal(&animal)
+	if errs != nil {
+		t.Fatalf("Unmarshal failed: %v", errs)
+	}
+
+	if len(jsonData) == 0 {
+		t.Fatal("Expected non-empty JSON data")
+	}
+
+	// Verify it's valid JSON
+	var result map[string]any
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		t.Fatalf("Invalid JSON produced: %v", err)
+	}
+
+	if result["species"] != string(SpeciesCat) {
+		t.Errorf("Expected species 'cat', got %v", result["species"])
+	}
+	if result["name"] != "Whiskers" {
+		t.Errorf("Expected name 'Whiskers', got %v", result["name"])
+	}
+	if result["lives_left"].(float64) != 7 {
+		t.Errorf("Expected lives_left 7, got %v", result["lives_left"])
+	}
+}
+
+func TestDiscriminatedUnion_Unmarshal_Dog(t *testing.T) {
+	dog := Dog{
+		Species: SpeciesDog,
+		Name:    "Buddy",
+		Breed:   "Golden Retriever",
+		IsGood:  true,
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  Cat{},
+			SpeciesDog:  Dog{},
+			SpeciesBird: Bird{},
+		}),
+	)
+
+	var animal Animal = dog
+	jsonData, errs := validator.Unmarshal(&animal)
+	if errs != nil {
+		t.Fatalf("Unmarshal failed: %v", errs)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		t.Fatalf("Invalid JSON produced: %v", err)
+	}
+
+	if result["species"] != string(SpeciesDog) {
+		t.Errorf("Expected species 'dog', got %v", result["species"])
+	}
+	if result["name"] != "Buddy" {
+		t.Errorf("Expected name 'Buddy', got %v", result["name"])
+	}
+	if result["breed"] != "Golden Retriever" {
+		t.Errorf("Expected breed 'Golden Retriever', got %v", result["breed"])
+	}
+}
+
+func TestDiscriminatedUnion_Unmarshal_ValidationFailure(t *testing.T) {
+	cat := Cat{
+		Species:   SpeciesCat,
+		Name:      "Whiskers",
+		LivesLeft: 15, // Invalid: exceeds Max(9)
+		IsIndoor:  true,
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  Cat{},
+			SpeciesDog:  Dog{},
+			SpeciesBird: Bird{},
+		}),
+	)
+
+	var animal Animal = cat
+	_, errs := validator.Unmarshal(&animal)
+	if errs == nil {
+		t.Fatal("Expected validation to fail for lives_left > 9")
+	}
+
+	// Should have constraint error
+	found := false
+	for _, err := range errs {
+		if err.Type == "constraint" && len(err.Loc) > 0 && err.Loc[len(err.Loc)-1] == "LivesLeft" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected constraint error on LivesLeft, got: %v", errs)
+	}
+}
+
+func TestDiscriminatedUnion_Unmarshal_InvalidDiscriminator(t *testing.T) {
+	// Create a struct with an invalid discriminator value
+	// This tests the type mismatch detection
+	cat := Cat{
+		Species:   "invalid", // Not one of the allowed values
+		Name:      "Whiskers",
+		LivesLeft: 7,
+		IsIndoor:  true,
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  Cat{},
+			SpeciesDog:  Dog{},
+			SpeciesBird: Bird{},
+		}),
+	)
+
+	var animal Animal = cat
+	_, errs := validator.Unmarshal(&animal)
+	if errs == nil {
+		t.Fatal("Expected validation to fail for invalid discriminator value")
+	}
+
+	if errs[0].Type != "discriminator_invalid" {
+		t.Errorf("Expected discriminator_invalid error, got: %s", errs[0].Type)
+	}
+}
+
+func TestDiscriminatedUnion_Unmarshal_MissingRequiredField(t *testing.T) {
+	dog := Dog{
+		Species: SpeciesDog,
+		Name:    "Buddy",
+		// Breed is missing (required field)
+		IsGood: true,
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  Cat{},
+			SpeciesDog:  Dog{},
+			SpeciesBird: Bird{},
+		}),
+	)
+
+	var animal Animal = dog
+	_, errs := validator.Unmarshal(&animal)
+	if errs == nil {
+		t.Fatal("Expected validation to fail for missing required 'breed' field")
+	}
+
+	found := false
+	for _, err := range errs {
+		if err.Type == "required" && len(err.Loc) > 0 && err.Loc[len(err.Loc)-1] == "Breed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected required error on Breed, got: %v", errs)
+	}
+}
+
+func TestDiscriminatedUnion_Unmarshal_PointerVariants(t *testing.T) {
+	cat := &Cat{
+		Species:   SpeciesCat,
+		Name:      "Shadow",
+		LivesLeft: 5,
+		IsIndoor:  true,
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat:  &Cat{},
+			SpeciesDog:  &Dog{},
+			SpeciesBird: &Bird{},
+		}),
+	)
+
+	var animal Animal = cat
+	jsonData, errs := validator.Unmarshal(&animal)
+	if errs != nil {
+		t.Fatalf("Unmarshal failed: %v", errs)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		t.Fatalf("Invalid JSON produced: %v", err)
+	}
+
+	if result["name"] != "Shadow" {
+		t.Errorf("Expected name 'Shadow', got %v", result["name"])
+	}
+	if result["lives_left"].(float64) != 5 {
+		t.Errorf("Expected lives_left 5, got %v", result["lives_left"])
+	}
+}
+
+// Test with defaults to ensure they're applied during Unmarshal
+type CatWithDefaults struct {
+	Species   AnimalSpecies `json:"species"`
+	Name      string        `json:"name"`
+	LivesLeft int           `json:"lives_left"`
+	Color     string        `json:"color"`
+}
+
+func (c CatWithDefaults) GetSpecies() AnimalSpecies { return c.Species }
+func (c CatWithDefaults) isAnimal()                 {}
+
+func (c *CatWithDefaults) FieldSpecies() godantic.FieldOptions[AnimalSpecies] {
+	return godantic.Field(
+		godantic.Required[AnimalSpecies](),
+		godantic.Const(SpeciesCat),
+	)
+}
+
+func (c *CatWithDefaults) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(
+		godantic.Required[string](),
+	)
+}
+
+func (c *CatWithDefaults) FieldLivesLeft() godantic.FieldOptions[int] {
+	return godantic.Field(
+		godantic.Default(9), // Default value
+		godantic.Min(0),
+		godantic.Max(9),
+	)
+}
+
+func (c *CatWithDefaults) FieldColor() godantic.FieldOptions[string] {
+	return godantic.Field(
+		godantic.Default("orange"), // Default value
+	)
+}
+
+func TestDiscriminatedUnion_Unmarshal_AppliesDefaults(t *testing.T) {
+	cat := CatWithDefaults{
+		Species: SpeciesCat,
+		Name:    "Garfield",
+		// LivesLeft not set - should default to 9
+		// Color not set - should default to "orange"
+	}
+
+	validator := godantic.NewValidator[Animal](
+		godantic.WithDiscriminatorTyped("species", map[AnimalSpecies]any{
+			SpeciesCat: CatWithDefaults{},
+		}),
+	)
+
+	var animal Animal = cat
+	jsonData, errs := validator.Unmarshal(&animal)
+	if errs != nil {
+		t.Fatalf("Unmarshal failed: %v", errs)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		t.Fatalf("Invalid JSON produced: %v", err)
+	}
+
+	// Verify defaults were applied
+	if result["lives_left"].(float64) != 9 {
+		t.Errorf("Expected lives_left default 9, got %v", result["lives_left"])
+	}
+	if result["color"] != "orange" {
+		t.Errorf("Expected color default 'orange', got %v", result["color"])
 	}
 }

@@ -353,6 +353,12 @@ func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 // 3. Marshal the struct to JSON
 // Returns the JSON bytes and any validation errors.
 func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
+	// Check if this is a discriminated union validator
+	if v.config.discriminator != nil {
+		return v.unmarshalDiscriminatedUnion(obj, v.config.discriminator)
+	}
+
+	// Standard struct validation
 	// Validate first
 	errs := v.Validate(obj)
 	if len(errs) > 0 {
