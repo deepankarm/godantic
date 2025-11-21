@@ -11,13 +11,26 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
+// SchemaOptions configures schema generation behavior
+type SchemaOptions struct {
+	AutoGenerateTitles bool // Generate titles for all fields (Pydantic-style, default: true)
+}
+
+// DefaultSchemaOptions returns default options matching Pydantic behavior
+func DefaultSchemaOptions() SchemaOptions {
+	return SchemaOptions{
+		AutoGenerateTitles: true,
+	}
+}
+
 // Generator generates JSON Schema from validated structs
 type Generator[T any] struct {
 	validator *godantic.Validator[T]
 	reflector *jsonschema.Reflector
+	options   SchemaOptions
 }
 
-// NewGenerator creates a new schema generator
+// NewGenerator creates a new schema generator with default options
 func NewGenerator[T any]() *Generator[T] {
 	return &Generator[T]{
 		validator: godantic.NewValidator[T](),
@@ -25,14 +38,27 @@ func NewGenerator[T any]() *Generator[T] {
 			AllowAdditionalProperties:  false,
 			RequiredFromJSONSchemaTags: true,
 		},
+		options: DefaultSchemaOptions(),
 	}
+}
+
+// WithOptions configures the schema generator with custom options
+func (g *Generator[T]) WithOptions(opts SchemaOptions) *Generator[T] {
+	g.options = opts
+	return g
+}
+
+// WithAutoTitles is a convenience method to configure auto-title generation
+func (g *Generator[T]) WithAutoTitles(enabled bool) *Generator[T] {
+	g.options.AutoGenerateTitles = enabled
+	return g
 }
 
 // Generate generates JSON Schema for the type
 func (g *Generator[T]) Generate() (*jsonschema.Schema, error) {
 	var zero T
 	schema := g.reflector.Reflect(zero)
-	g.enhanceSchemaWithValidation(schema)
+	g.enhance(schema)
 	return schema, nil
 }
 
@@ -135,10 +161,13 @@ func GenerateWithOptions[T any](opts Options) (*jsonschema.Schema, error) {
 	return schema, nil
 }
 
-// GenerateForType generates a JSON schema for any reflect.Type
-// This is useful for generating schemas dynamically without compile-time generics
+// GenerateForType generates a JSON schema for any reflect.Type with default options
 func GenerateForType(t reflect.Type) (map[string]any, error) {
-	// Create a zero instance
+	return GenerateForTypeWithOptions(t, DefaultSchemaOptions())
+}
+
+// GenerateForTypeWithOptions generates a JSON schema for any reflect.Type with custom options
+func GenerateForTypeWithOptions(t reflect.Type, opts SchemaOptions) (map[string]any, error) {
 	var instance any
 	if t.Kind() == reflect.Pointer {
 		instance = reflect.New(t.Elem()).Interface()
@@ -152,13 +181,9 @@ func GenerateForType(t reflect.Type) (map[string]any, error) {
 		RequiredFromJSONSchemaTags: true,
 	}
 
-	// Generate base schema
 	schema := reflector.Reflect(instance)
+	enhanceSchema(schema, reflector, t, opts)
 
-	// Enhance with godantic validation metadata
-	enhanceSchema(schema, reflector, t)
-
-	// Convert to map
 	schemaJSON, err := json.Marshal(schema)
 	if err != nil {
 		return nil, err

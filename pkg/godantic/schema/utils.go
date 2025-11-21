@@ -14,11 +14,3 @@ func findActualSchema(schema *jsonschema.Schema) *jsonschema.Schema {
 	}
 	return schema
 }
-
-// toLowerFirst converts first letter to lowercase
-func toLowerFirst(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	return string(s[0]+32) + s[1:]
-}

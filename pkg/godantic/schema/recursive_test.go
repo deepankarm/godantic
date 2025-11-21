@@ -30,7 +30,7 @@ func TestRecursiveStructSimple(t *testing.T) {
 	t.Logf("Generated schema:\n%s", schemaJSON)
 
 	// Verify the schema has $defs for Node
-	if schema.Definitions == nil || len(schema.Definitions) == 0 {
+	if len(schema.Definitions) == 0 {
 		t.Error("Expected schema to have definitions for recursive type")
 	}
 }
@@ -79,7 +79,7 @@ func TestRecursiveStructWithValidation(t *testing.T) {
 // TestMutuallyRecursiveStructs tests mutual recursion (A -> B -> A)
 func TestMutuallyRecursiveStructs(t *testing.T) {
 	type PersonNode struct {
-		Name      string         `json:"name"`
+		Name       string        `json:"name"`
 		BestFriend *PersonNode   `json:"best_friend,omitempty"`
 		Friends    []*PersonNode `json:"friends,omitempty"`
 	}
@@ -101,8 +101,8 @@ func TestMutuallyRecursiveStructs(t *testing.T) {
 // TestDeeplyNestedRecursive tests deeply nested recursive structures
 func TestDeeplyNestedRecursive(t *testing.T) {
 	type LinkedListNode struct {
-		Data int              `json:"data"`
-		Next *LinkedListNode  `json:"next,omitempty"`
+		Data int             `json:"data"`
+		Next *LinkedListNode `json:"next,omitempty"`
 	}
 
 	gen := schema.NewGenerator[LinkedListNode]()
@@ -132,11 +132,11 @@ func TestDeeplyNestedRecursive(t *testing.T) {
 // TestRecursiveWithComplexFields tests recursive struct with complex nested fields
 func TestRecursiveWithComplexFields(t *testing.T) {
 	type Category struct {
-		ID          string      `json:"id"`
-		Name        string      `json:"name"`
-		Description string      `json:"description"`
-		Parent      *Category   `json:"parent,omitempty"`
-		Children    []*Category `json:"children,omitempty"`
+		ID          string            `json:"id"`
+		Name        string            `json:"name"`
+		Description string            `json:"description"`
+		Parent      *Category         `json:"parent,omitempty"`
+		Children    []*Category       `json:"children,omitempty"`
 		Metadata    map[string]string `json:"metadata,omitempty"`
 	}
 
@@ -175,4 +175,3 @@ func checkForRefs(t *testing.T, data any) bool {
 	}
 	return false
 }
-
