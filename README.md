@@ -1,7 +1,8 @@
 # Godantic
 
-Godantic provides runtime validation and automatic JSON Schema generation with Union type support, without struct tags. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic). Built for developers working with LLM APIs (OpenAI, Anthropic, Gemini), building REST APIs with OpenAPI specs, or validating complex structured data in Go.
+**FastAPI-style automatic OpenAPI generation and validation for Go.** Define your types once with validation rules, get runtime validation, JSON schemas, and complete OpenAPI specs—without struct tags.
 
+Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). Works with OpenAI/Anthropic/Gemini structured output APIs, Gin REST APIs, and any system that needs JSON Schema or OpenAPI 3.0.3 specs.
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
@@ -13,12 +14,13 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 }
 ```
 
-**Why Godantic?:**
-- **Single source of truth**: Define validation rules once, use them for both runtime checks and schema generation
-- **Beyond struct tags**: Validation libraries and JSON Schema generators use different tag syntaxes. Godantic uses Go code, so your IDE, tests, and debugger all work naturally. Critical when iterating on LLM schemas.
-- **Union type support**: Generate proper `anyOf`/`oneOf` schemas—critical for LLM structured outputs and OpenAPI
-- **Type-safe**: Go generics catch errors at compile time instead of runtime
-- **Testable**: Validation is plain Go code you can unit test
+**Key Features:**
+
+- **Single source of truth**: Define validation rules once in Go code, get runtime validation + JSON Schema + OpenAPI specs
+- **No struct tags**: Uses `Field{Name}()` methods instead of tag syntax—works with your IDE, tests, and debugger
+- **Union type support**: Generates `anyOf`/`oneOf` schemas with discriminators for LLM structured outputs and OpenAPI 3.1
+- **Gin integration**: FastAPI-style automatic OpenAPI generation and interactive docs (`/docs`, `/redoc`)
+- **Type-safe**: Leverages Go generics for compile-time safety
 
 ```bash
 go get github.com/deepankarm/godantic
@@ -410,7 +412,7 @@ See [`examples/openai-structured-output/`](./examples/openai-structured-output/)
 
 ## Gin Integration (gingodantic)
 
-**Automatic OpenAPI spec generation and validation for Gin APIs.** Define your request/response types once with godantic, get OpenAPI specs and validation for free.
+Automatic OpenAPI spec generation and validation for Gin APIs. Define your request/response types once, get runtime validation, OpenAPI specs, and interactive documentation.
 
 ```go
 import "github.com/deepankarm/godantic/pkg/gingodantic"
