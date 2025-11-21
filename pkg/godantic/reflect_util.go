@@ -336,9 +336,13 @@ func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
 		return
 	}
 
-	// Add this type to the map
-	if t.Name() != "" {
-		types[t.Name()] = t
+	// Check if we've already processed this type (prevents infinite recursion)
+	typeName := t.Name()
+	if typeName != "" {
+		if _, exists := types[typeName]; exists {
+			return // Already processed, skip to avoid infinite recursion
+		}
+		types[typeName] = t
 	}
 
 	// Recursively process all struct fields
