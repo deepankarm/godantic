@@ -103,12 +103,20 @@ func main() {
 
 	// Serve OpenAPI spec
 	router.GET("/openapi.json", api.OpenAPIHandler())
+	
+	// Serve Swagger UI (interactive API documentation)
+	router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
+	
+	// Serve ReDoc (alternative API documentation)
+	router.GET("/redoc", gingodantic.ReDoc("/openapi.json"))
 
 	// Print startup message
 	println("Server starting on :8080")
-	println("OpenAPI spec available at: http://localhost:8080/openapi.json")
-	println("Test with:")
-	println("  curl http://localhost:8080/openapi.json")
+	println("API Documentation:")
+	println("  Swagger UI:  http://localhost:8080/docs")
+	println("  ReDoc:       http://localhost:8080/redoc")
+	println("  OpenAPI Spec: http://localhost:8080/openapi.json")
+	println("\nTest with:")
 	println("  curl -X POST http://localhost:8080/users -H 'Content-Type: application/json' -d '{\"name\":\"John Doe\",\"email\":\"john@example.com\",\"age\":25}'")
 
 	router.Run(":8080")

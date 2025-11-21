@@ -451,9 +451,10 @@ router.POST("/users",
     },
 )
 
-// Serve OpenAPI spec
+// Serve OpenAPI spec and documentation UIs
 router.GET("/openapi.json", api.OpenAPIHandler())
-// TODO: Add Swagger UI
+router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
+router.GET("/redoc", gingodantic.ReDoc("/openapi.json"))  // Alternative UI
 ```
 
 **Features:**
@@ -462,7 +463,7 @@ router.GET("/openapi.json", api.OpenAPIHandler())
 - **OpenAPI 3.0.3 generation**: Complete spec with all parameter types and constraints
 - **Type-safe helpers**: `GetValidated[T]()`, `GetValidatedQuery[T]()`, `GetValidatedPath[T]()`, etc.
 - **Validation by default**: Enabled automatically when request types are specified
-- **Swagger UI included**: Built-in handler for API documentation
+- **Documentation UIs**: Built-in Swagger UI and ReDoc handlers
 - **Zero boilerplate**: No manual schema writing or validation middleware
 
 **Parameter types supported:**
