@@ -7,21 +7,21 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
-// reflectUnionVariants reflects all discriminated union variant types and adds them to schema definitions
-func (g *Generator[T]) reflectUnionVariants(schema *jsonschema.Schema, fieldOptions map[string]any) {
-	for _, optsAny := range fieldOptions {
-		opts := optsAny.(fieldOption)
-		g.processUnionConstraints(schema, opts.Constraints())
+// reflectVariantsFromType reflects all union variant types from a struct type and adds them to schema definitions
+func reflectVariantsFromType(reflector *jsonschema.Reflector, schema *jsonschema.Schema, t reflect.Type) {
+	fieldOptions := godantic.ScanTypeFieldOptions(t)
+	for _, opts := range fieldOptions {
+		reflectUnionConstraints(reflector, schema, opts.Constraints)
 	}
 }
 
-// processUnionConstraints processes union constraints and reflects variant types
-func (g *Generator[T]) processUnionConstraints(schema *jsonschema.Schema, constraints map[string]any) {
+// reflectUnionConstraints reflects union variant types from field constraints
+func reflectUnionConstraints(reflector *jsonschema.Reflector, schema *jsonschema.Schema, constraints map[string]any) {
 	// Handle DiscriminatedUnion variants
 	if discriminator, ok := constraints[godantic.ConstraintDiscriminator].(map[string]any); ok {
 		if mapping, ok := discriminator["mapping"].(map[string]any); ok {
 			for _, variant := range mapping {
-				g.reflectVariantType(schema, variant)
+				reflectVariant(reflector, schema, variant)
 			}
 		}
 	}
@@ -30,14 +30,14 @@ func (g *Generator[T]) processUnionConstraints(schema *jsonschema.Schema, constr
 	if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
 		if types, ok := anyOfTypes.([]any); ok {
 			for _, typeInstance := range types {
-				g.reflectUnionOfType(schema, typeInstance)
+				reflectUnionOf(reflector, schema, typeInstance)
 			}
 		}
 	}
 }
 
-// reflectUnionOfType reflects types from UnionOf and adds them to schema definitions
-func (g *Generator[T]) reflectUnionOfType(schema *jsonschema.Schema, typeInstance any) {
+// reflectUnionOf reflects types from UnionOf constraints and adds them to schema definitions
+func reflectUnionOf(reflector *jsonschema.Reflector, schema *jsonschema.Schema, typeInstance any) {
 	t := reflect.TypeOf(typeInstance)
 	if t == nil {
 		return
@@ -49,24 +49,24 @@ func (g *Generator[T]) reflectUnionOfType(schema *jsonschema.Schema, typeInstanc
 		if elemType.Kind() == reflect.Struct {
 			// Reflect the struct type
 			elemInstance := reflect.New(elemType).Elem().Interface()
-			g.reflectVariantType(schema, elemInstance)
+			reflectVariant(reflector, schema, elemInstance)
 		}
 	} else if t.Kind() == reflect.Struct {
 		// Directly reflect struct types
-		g.reflectVariantType(schema, typeInstance)
+		reflectVariant(reflector, schema, typeInstance)
 	}
 	// Primitives and maps don't need definition reflection
 }
 
-// reflectVariantType reflects a single variant type and adds it to the schema
-func (g *Generator[T]) reflectVariantType(schema *jsonschema.Schema, variant any) {
+// reflectVariant reflects a single variant type and adds it to the schema definitions
+func reflectVariant(reflector *jsonschema.Reflector, schema *jsonschema.Schema, variant any) {
 	variantType := reflect.TypeOf(variant)
 	if variantType == nil {
 		return
 	}
 
 	// Reflect the variant type to ensure it's in the schema
-	variantSchema := g.reflector.Reflect(variant)
+	variantSchema := reflector.Reflect(variant)
 
 	// Add to definitions if not already present
 	if schema.Definitions == nil {
@@ -95,16 +95,5 @@ func (g *Generator[T]) reflectVariantType(schema *jsonschema.Schema, variant any
 		} else {
 			schema.Definitions[variantDefName] = variantSchema
 		}
-	}
-}
-
-// reflectUnionVariantsFromType reflects union variants from a specific type's fields
-func reflectUnionVariantsFromType[T any](g *Generator[T], schema *jsonschema.Schema, t reflect.Type) {
-	// Use shared reflection utility to scan Field{Name}() methods
-	fieldOptions := godantic.ScanTypeFieldOptions(t)
-
-	// Process each field's union constraints
-	for _, opts := range fieldOptions {
-		g.processUnionConstraints(schema, opts.Constraints)
 	}
 }
