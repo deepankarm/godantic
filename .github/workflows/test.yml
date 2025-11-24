@@ -55,3 +55,6 @@ jobs:
     - name: Run tests with race detector
       run: go test ./... -race -short
 
+    - name: Run benchmarks
+      run: go test -bench=. -benchmem ./pkg/godantic_bench -run=^$
+
