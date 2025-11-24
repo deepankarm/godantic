@@ -21,23 +21,25 @@ type SwaggerUIConfig struct {
 // DefaultSwaggerUIConfig returns default Swagger UI configuration
 func DefaultSwaggerUIConfig(openAPIURL string) SwaggerUIConfig {
 	return SwaggerUIConfig{
-		OpenAPIURL:   openAPIURL,
-		Title:        "API Documentation",
-		SwaggerJSURL: "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+		OpenAPIURL:    openAPIURL,
+		Title:         "API Documentation",
+		SwaggerJSURL:  "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
 		SwaggerCSSURL: "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
-		FaviconURL:   "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/favicon-32x32.png",
+		FaviconURL:    "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/favicon-32x32.png",
 	}
 }
 
 // SwaggerUI returns a Gin handler that serves Swagger UI
-// 
+//
 // Example:
-//   router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
-//   
+//
+//	router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
+//
 // You can customize the configuration:
-//   config := gingodantic.DefaultSwaggerUIConfig("/openapi.json")
-//   config.Title = "My API Docs"
-//   router.GET("/docs", gingodantic.SwaggerUIWithConfig(config))
+//
+//	config := gingodantic.DefaultSwaggerUIConfig("/openapi.json")
+//	config.Title = "My API Docs"
+//	router.GET("/docs", gingodantic.SwaggerUIWithConfig(config))
 func SwaggerUI(openAPIURL string) gin.HandlerFunc {
 	return SwaggerUIWithConfig(DefaultSwaggerUIConfig(openAPIURL))
 }
@@ -105,7 +107,8 @@ func DefaultReDocConfig(openAPIURL string) ReDocConfig {
 // ReDoc returns a Gin handler that serves ReDoc UI (alternative to Swagger UI)
 //
 // Example:
-//   router.GET("/redoc", gingodantic.ReDoc("/openapi.json"))
+//
+//	router.GET("/redoc", gingodantic.ReDoc("/openapi.json"))
 func ReDoc(openAPIURL string) gin.HandlerFunc {
 	return ReDocWithConfig(DefaultReDocConfig(openAPIURL))
 }
@@ -146,4 +149,3 @@ func ReDocWithConfig(config ReDocConfig) gin.HandlerFunc {
 		c.String(200, html)
 	}
 }
-

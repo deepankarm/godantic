@@ -185,4 +185,3 @@ func TestDefaultReDocConfig(t *testing.T) {
 		t.Error("Expected Google Fonts to be enabled by default")
 	}
 }
-

@@ -201,4 +201,3 @@ func TestGenerateForType_WithoutDiscriminatedUnion(t *testing.T) {
 		t.Error("Expected Address schema in $defs")
 	}
 }
-

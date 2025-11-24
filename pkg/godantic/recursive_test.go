@@ -142,4 +142,3 @@ func TestRecursiveMutualReference(t *testing.T) {
 		t.Error("Expected validation error for short name")
 	}
 }
-

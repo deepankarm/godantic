@@ -351,7 +351,7 @@ func TestDiscriminatedUnionSchema(t *testing.T) {
 	// Verify description is present
 	if desc, ok := responseField["description"].(string); !ok || desc == "" {
 		t.Error("Description not found or empty in Response field")
-}
+	}
 
 	// Verify all response type definitions exist
 	if _, ok := defs["SuccessResponse"]; !ok {

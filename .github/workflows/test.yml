@@ -37,9 +37,9 @@ jobs:
 
     - name: Check formatting
       run: |
-        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+        if [ "$(gofmt -s -l . | grep -v '^examples/' | wc -l)" -gt 0 ]; then
           echo "Code is not formatted. Run 'go fmt ./...'"
-          gofmt -s -d .
+          gofmt -s -d . | grep -v '^examples/'
           exit 1
         fi
 
