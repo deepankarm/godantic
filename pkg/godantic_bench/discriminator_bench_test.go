@@ -181,28 +181,6 @@ func (e *EventLog) FieldEvent() godantic.FieldOptions[Event] {
 	)
 }
 
-// ============================================================================
-// Key Benchmark: Discriminated Union Unmarshal
-// Compares godantic's automatic discriminated union handling vs manual code
-// ============================================================================
-
-// Godantic: Automatic discriminated union via FieldPet()
-func BenchmarkDiscriminator_Godantic(b *testing.B) {
-	validator := godantic.NewValidator[SimplePetOwner]()
-	data := []byte(`{"name":"John","pet":{"species":"dog","breed":"Labrador"}}`)
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for b.Loop() {
-		result, errs := validator.Marshal(data)
-		if len(errs) != 0 {
-			b.Fatalf("unexpected validation errors: %v", errs)
-		}
-		_ = result
-	}
-}
-
 // Manual: Custom UnmarshalJSON implementation
 type ManualPetOwner struct {
 	Name string    `json:"name"`
