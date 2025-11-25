@@ -201,36 +201,38 @@ func unmarshalDiscriminatedUnionSlice(data []byte, discriminatorField string, ma
 }
 
 // processRecursive unmarshals JSON into a value, handling discriminated unions recursively
-func processRecursive(val reflect.Value, data []byte) ValidationErrors {
-	// Handle pointer types - recurse into the element
-	if val.Type().Elem().Kind() == reflect.Pointer {
-		if val.Elem().IsNil() {
-			val.Elem().Set(reflect.New(val.Type().Elem().Elem()))
+func processRecursive(valPtr reflect.Value, data []byte) ValidationErrors {
+	// valPtr must be a pointer
+	targetType := valPtr.Type().Elem()
+
+	// Unwrap nested pointers (e.g., **T -> T)
+	for targetType.Kind() == reflect.Pointer {
+		if valPtr.Elem().IsNil() {
+			valPtr.Elem().Set(reflect.New(targetType.Elem()))
 		}
-		return processRecursive(val.Elem(), data)
+		valPtr = valPtr.Elem()
+		targetType = targetType.Elem()
 	}
 
-	t := val.Type().Elem() // val is pointer to struct or simple type
-
-	// Base case: Not a struct, just unmarshal
-	if t.Kind() != reflect.Struct {
-		if err := json.Unmarshal(data, val.Interface()); err != nil {
+	// Base case: Not a struct, use standard JSON unmarshal
+	if targetType.Kind() != reflect.Struct {
+		if err := json.Unmarshal(data, valPtr.Interface()); err != nil {
 			return ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("json unmarshal failed: %v", err), Type: "json_decode"}}
 		}
 		return nil
 	}
 
-	// It is a struct. Parse JSON to map for field access.
-	var rawData map[string]json.RawMessage
-	if err := json.Unmarshal(data, &rawData); err != nil {
-		return ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to parse JSON: %v", err), Type: "json_decode"}}
+	// Struct case: apply BeforeValidate hook if it exists
+	rawData, err := applyBeforeValidateHook[map[string]json.RawMessage](valPtr, data)
+	if err != nil {
+		return err
 	}
 
-	fieldOptions := scanner.scanFieldOptionsFromType(t)
-	structVal := val.Elem()
+	fieldOptions := scanner.scanFieldOptionsFromType(targetType)
+	structVal := valPtr.Elem()
 
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for i := 0; i < targetType.NumField(); i++ {
+		field := targetType.Field(i)
 		fieldVal := structVal.Field(i)
 		if !fieldVal.CanSet() {
 			continue
@@ -415,4 +417,89 @@ func hasNestedDiscriminatedUnions(fieldOptions map[string]*fieldOptionHolder) bo
 		}
 	}
 	return false
+}
+
+// applyBeforeValidateHook applies BeforeValidate hook and converts result to requested type
+func applyBeforeValidateHook[R any](valPtr reflect.Value, data []byte) (R, ValidationErrors) {
+	var zero R
+
+	// Check if hook exists
+	ptrType := valPtr.Type()
+	method, hasHook := ptrType.MethodByName("BeforeValidate")
+
+	if !hasHook {
+		// No hook - parse directly to requested type
+		return parseToType[R](data)
+	}
+
+	// Parse to map[string]any for modification
+	var rawDataAny map[string]any
+	if err := json.Unmarshal(data, &rawDataAny); err != nil {
+		return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to parse JSON: %v", err), Type: "json_decode"}}
+	}
+
+	// Call the hook
+	results := method.Func.Call([]reflect.Value{valPtr, reflect.ValueOf(rawDataAny)})
+	if len(results) > 0 && !results[0].IsNil() {
+		if err, ok := results[0].Interface().(error); ok {
+			return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("BeforeValidate hook failed: %v", err), Type: "hook_error"}}
+		}
+	}
+
+	// Convert modified map to requested type
+	return convertMapToType[R](rawDataAny)
+}
+
+// parseToType parses JSON bytes to the requested type (no hook path)
+func parseToType[R any](data []byte) (R, ValidationErrors) {
+	var zero R
+	var result any
+
+	// Check what type R is and parse accordingly
+	switch any(zero).(type) {
+	case map[string]json.RawMessage:
+		var rawData map[string]json.RawMessage
+		if err := json.Unmarshal(data, &rawData); err != nil {
+			return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to parse JSON: %v", err), Type: "json_decode"}}
+		}
+		result = rawData
+	case []byte:
+		result = data
+	default:
+		return zero, ValidationErrors{{Loc: []string{}, Message: "unsupported return type for BeforeValidate hook", Type: "internal"}}
+	}
+
+	return result.(R), nil
+}
+
+// convertMapToType converts map[string]any to the requested type (with hook path)
+func convertMapToType[R any](rawDataAny map[string]any) (R, ValidationErrors) {
+	var zero R
+	var result any
+
+	// Check what type R is and convert accordingly
+	switch any(zero).(type) {
+	case map[string]json.RawMessage:
+		// Convert map[string]any to map[string]json.RawMessage field-by-field
+		rawData := make(map[string]json.RawMessage, len(rawDataAny))
+		for key, value := range rawDataAny {
+			valueBytes, err := json.Marshal(value)
+			if err != nil {
+				return zero, ValidationErrors{{Loc: []string{key}, Message: fmt.Sprintf("failed to marshal field: %v", err), Type: "json_encode"}}
+			}
+			rawData[key] = valueBytes
+		}
+		result = rawData
+	case []byte:
+		// Marshal entire map to JSON bytes
+		modifiedData, err := json.Marshal(rawDataAny)
+		if err != nil {
+			return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to marshal modified data: %v", err), Type: "json_encode"}}
+		}
+		result = modifiedData
+	default:
+		return zero, ValidationErrors{{Loc: []string{}, Message: "unsupported return type for BeforeValidate hook", Type: "internal"}}
+	}
+
+	return result.(R), nil
 }

@@ -347,6 +347,67 @@ if len(errs) > 0 {
 // jsonData is valid JSON with all defaults
 ```
 
+### Lifecycle Hooks
+
+Godantic provides hooks to transform data at different stages of validation and serialization:
+
+**`BeforeValidate` - Transform JSON before validation**
+
+Modify the raw JSON map before unmarshaling and validation (useful for backward compatibility):
+
+```go
+func (u *User) BeforeValidate(raw map[string]any) error {
+    // Normalize legacy format
+    if legacyField, ok := raw["old_field"]; ok {
+        raw["new_field"] = legacyField
+        delete(raw, "old_field")
+    }
+    return nil
+}
+```
+
+**`AfterValidate` - Transform struct after validation**
+
+Modify the struct after successful validation (useful for computed fields):
+
+```go
+func (u *User) AfterValidate() error {
+    u.DisplayName = strings.ToLower(u.Username)
+    return nil
+}
+```
+
+**`BeforeSerialize` - Transform struct before marshaling**
+
+Modify the struct before marshaling to JSON:
+
+```go
+func (u *User) BeforeSerialize() error {
+    u.UpdatedAt = time.Now()
+    return nil
+}
+```
+
+**`AfterSerialize` - Transform JSON after marshaling**
+
+Modify the JSON bytes after marshaling (useful for wrapping responses):
+
+```go
+func (u *User) AfterSerialize(data []byte) ([]byte, error) {
+    // Wrap in envelope
+    envelope := map[string]any{
+        "data": json.RawMessage(data),
+        "version": "1.0",
+    }
+    return json.Marshal(envelope)
+}
+```
+
+**Execution order:**
+
+- **Marshal** (JSON → Struct): `BeforeValidate` → unmarshal → validate → defaults → `AfterValidate`
+- **Unmarshal** (Struct → JSON): `BeforeSerialize` → validate → defaults → marshal → `AfterSerialize`
+
 ### Complex Structures
 
 Works with embedded structs, nested structs, pointers, slices, and maps:

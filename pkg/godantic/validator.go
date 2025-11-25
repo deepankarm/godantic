@@ -354,6 +354,12 @@ func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 		}
 		obj = objPtr.Elem().Interface().(T)
 	} else {
+		// BeforeValidate hook for simple structs (returns modified JSON bytes)
+		data, errs := applyBeforeValidateHook[[]byte](objPtr, data)
+		if errs != nil {
+			return nil, errs
+		}
+
 		// Standard JSON unmarshal
 		if err := json.Unmarshal(data, &obj); err != nil {
 			return nil, ValidationErrors{{
@@ -377,6 +383,15 @@ func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 		return &obj, errs
 	}
 
+	// AfterValidate hook: transform struct after validation
+	if err := v.callAfterValidateHook(&obj); err != nil {
+		return nil, ValidationErrors{{
+			Loc:     []string{},
+			Message: fmt.Sprintf("AfterValidate hook failed: %v", err),
+			Type:    "hook_error",
+		}}
+	}
+
 	return &obj, nil
 }
 
@@ -392,8 +407,16 @@ func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
 		return v.unmarshalDiscriminatedUnion(obj, v.config.discriminator)
 	}
 
-	// Standard struct validation
-	// Validate first
+	// BeforeSerialize hook: transform struct before validation
+	if err := v.callBeforeSerializeHook(obj); err != nil {
+		return nil, ValidationErrors{{
+			Loc:     []string{},
+			Message: fmt.Sprintf("BeforeSerialize hook failed: %v", err),
+			Type:    "hook_error",
+		}}
+	}
+
+	// Validate struct
 	errs := v.Validate(obj)
 	if len(errs) > 0 {
 		return nil, errs
@@ -418,6 +441,16 @@ func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
 		}}
 	}
 
+	// AfterSerialize hook: transform JSON after marshaling
+	data, err = v.callAfterSerializeHook(data)
+	if err != nil {
+		return nil, ValidationErrors{{
+			Loc:     []string{},
+			Message: fmt.Sprintf("AfterSerialize hook failed: %v", err),
+			Type:    "hook_error",
+		}}
+	}
+
 	return data, nil
 }
 
@@ -428,4 +461,57 @@ func (v *Validator[T]) FieldOptions() map[string]any {
 		result[k] = v
 	}
 	return result
+}
+
+// callNoArgHook calls a hook method with no arguments that returns error
+func callNoArgHook(obj any, methodName string) error {
+	method := reflect.ValueOf(obj).MethodByName(methodName)
+	if !method.IsValid() {
+		return nil
+	}
+
+	results := method.Call([]reflect.Value{})
+	if len(results) > 0 && !results[0].IsNil() {
+		if err, ok := results[0].Interface().(error); ok {
+			return err
+		}
+	}
+	return nil
+}
+
+// callAfterValidateHook calls AfterValidate if the type implements it
+func (v *Validator[T]) callAfterValidateHook(obj *T) error {
+	return callNoArgHook(obj, "AfterValidate")
+}
+
+// callBeforeSerializeHook calls BeforeSerialize if the type implements it
+func (v *Validator[T]) callBeforeSerializeHook(obj *T) error {
+	return callNoArgHook(obj, "BeforeSerialize")
+}
+
+// callAfterSerializeHook calls AfterSerialize if the type implements it
+func (v *Validator[T]) callAfterSerializeHook(data []byte) ([]byte, error) {
+	var obj T
+	method := reflect.ValueOf(&obj).MethodByName("AfterSerialize")
+	if !method.IsValid() {
+		return data, nil
+	}
+
+	results := method.Call([]reflect.Value{reflect.ValueOf(data)})
+	if len(results) < 2 {
+		return data, nil
+	}
+
+	// First result is []byte, second is error
+	if !results[1].IsNil() {
+		if err, ok := results[1].Interface().(error); ok {
+			return nil, err
+		}
+	}
+
+	if resultData, ok := results[0].Interface().([]byte); ok {
+		return resultData, nil
+	}
+
+	return data, nil
 }
