@@ -143,18 +143,25 @@ func (v *Validator[T]) scanFieldOptions() {
 }
 
 func (v *Validator[T]) Validate(obj *T) ValidationErrors {
-	return v.validateWithPath(obj, []string{})
-}
-
-// validateWithPath validates the struct and tracks the field path for nested validation
-func (v *Validator[T]) validateWithPath(obj *T, path []string) ValidationErrors {
 	objPtr := reflect.ValueOf(obj)
-	return validateFieldsWithReflection(objPtr, v.fieldOptions, path, v.validateUnionConstraints)
+	return validateFieldsWithReflection(objPtr, v.fieldOptions, []string{}, v.validateUnionConstraints)
 }
 
 // validateDiscriminatorValue validates a single discriminated union value
 func validateDiscriminatorValue(value any, discriminatorField string, mapping map[string]any, path []string) *ValidationError {
 	valReflect := reflect.ValueOf(value)
+
+	// Handle pointer types
+	if valReflect.Kind() == reflect.Pointer {
+		if valReflect.IsNil() {
+			return &ValidationError{
+				Loc:     path,
+				Message: "discriminated union value cannot be nil",
+				Type:    "constraint",
+			}
+		}
+		valReflect = valReflect.Elem()
+	}
 
 	if valReflect.Kind() != reflect.Struct {
 		return &ValidationError{

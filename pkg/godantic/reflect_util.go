@@ -1,6 +1,7 @@
 package godantic
 
 import (
+	"fmt"
 	"reflect"
 )
 
@@ -479,8 +480,45 @@ func validateFieldsWithReflection(
 			nestedErrs := scanner.validateNestedStruct(field.Elem(), currentPath, fieldOptions)
 			errs = append(errs, nestedErrs...)
 		}
+
+		// Validate slices of structs
+		if field.Kind() == reflect.Slice && !field.IsZero() {
+			sliceErrs := scanner.validateSliceElements(field, currentPath)
+			errs = append(errs, sliceErrs...)
+		}
 	}
 
+	return errs
+}
+
+// validateSliceElements validates each element in a slice if they are structs with Field methods
+func (fs *fieldScanner) validateSliceElements(slice reflect.Value, parentPath []string) ValidationErrors {
+	elemType := slice.Type().Elem()
+	if elemType.Kind() == reflect.Pointer {
+		elemType = elemType.Elem()
+	}
+	if elemType.Kind() != reflect.Struct || isBasicType(elemType) {
+		return nil
+	}
+
+	errs := make(ValidationErrors, 0)
+	for i := 0; i < slice.Len(); i++ {
+		elem := slice.Index(i)
+		elemPath := append(append([]string{}, parentPath...), fmt.Sprintf("[%d]", i))
+
+		// Skip nil pointer elements
+		if elem.Kind() == reflect.Pointer && elem.IsNil() {
+			continue
+		}
+
+		// Unwrap pointer
+		if elem.Kind() == reflect.Pointer {
+			elem = elem.Elem()
+		}
+
+		nestedErrs := fs.validateNestedStruct(elem, elemPath, nil)
+		errs = append(errs, nestedErrs...)
+	}
 	return errs
 }
 

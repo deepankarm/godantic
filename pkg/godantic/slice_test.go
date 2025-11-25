@@ -221,3 +221,82 @@ func TestSlicesOfStructs(t *testing.T) {
 		}
 	})
 }
+
+// Test automatic validation of slice elements with Field methods
+type Employee struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func (e *Employee) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (e *Employee) FieldEmail() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+type Organization struct {
+	Name      string     `json:"name"`
+	Employees []Employee `json:"employees"`
+}
+
+func (o *Organization) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (o *Organization) FieldEmployees() godantic.FieldOptions[[]Employee] {
+	return godantic.Field(godantic.Required[[]Employee]())
+}
+
+func TestSlicesOfStructsWithFieldMethods(t *testing.T) {
+	validator := godantic.NewValidator[Organization]()
+
+	t.Run("valid organization with employees should pass", func(t *testing.T) {
+		org := Organization{
+			Name: "Tech Corp",
+			Employees: []Employee{
+				{Name: "Alice", Email: "alice@example.com"},
+				{Name: "Bob", Email: "bob@example.com"},
+			},
+		}
+		errs := validator.Validate(&org)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("employee with missing name should fail", func(t *testing.T) {
+		org := Organization{
+			Name: "Tech Corp",
+			Employees: []Employee{
+				{Name: "", Email: "alice@example.com"}, // Missing required Name
+			},
+		}
+		errs := validator.Validate(&org)
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+		if errs[0].Error() != "Employees.[0].Name: required field" {
+			t.Errorf("unexpected error: %v", errs[0])
+		}
+	})
+
+	t.Run("unmarshal JSON with missing employee email should fail", func(t *testing.T) {
+		jsonStr := `{
+			"name": "Tech Corp",
+			"employees": [
+				{"name": "Alice", "email": "alice@example.com"},
+				{"name": "Bob", "email": ""}
+			]
+		}`
+
+		_, errs := validator.Marshal([]byte(jsonStr))
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+		if errs[0].Error() != "Employees.[1].Email: required field" {
+			t.Errorf("unexpected error: %v", errs[0])
+		}
+	})
+}

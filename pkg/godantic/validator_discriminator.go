@@ -168,6 +168,11 @@ func unmarshalDiscriminatedUnionValue(data []byte, discriminatorField string, ma
 		return reflect.Value{}, err
 	}
 
+	// Validate the unmarshaled value
+	if validationErrs := validateAndApplyDefaults(concretePtr, elemType); len(validationErrs) > 0 {
+		return reflect.Value{}, validationErrs
+	}
+
 	if concreteType.Kind() == reflect.Pointer {
 		return concretePtr, nil
 	}
