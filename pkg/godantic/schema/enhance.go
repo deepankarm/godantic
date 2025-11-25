@@ -3,9 +3,9 @@ package schema
 import (
 	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 	"github.com/invopop/jsonschema"
 )
 
@@ -29,7 +29,7 @@ func enhanceSchema(schema *jsonschema.Schema, reflector *jsonschema.Reflector, r
 
 	// Collect all struct types from the root type
 	structTypes := make(map[string]reflect.Type)
-	godantic.CollectStructTypes(rootType, structTypes)
+	reflectutil.CollectStructTypes(rootType, structTypes)
 
 	// Iteratively collect and reflect union variant types
 	collectAndReflectUnionVariants(schema, reflector, structTypes)
@@ -88,7 +88,7 @@ func discoverNewVariantTypes(schema *jsonschema.Schema, structTypes map[string]r
 
 		// Search for this type in discriminated union mappings
 		if variantType := findVariantTypeByName(defName, structTypes); variantType != nil {
-			godantic.CollectStructTypes(variantType, structTypes)
+			reflectutil.CollectStructTypes(variantType, structTypes)
 			newFound = true
 		}
 	}
@@ -134,34 +134,19 @@ func isEmptyInterfaceSchema(s *jsonschema.Schema) bool {
 		len(s.AllOf) == 0
 }
 
-// enhanceDefinition enhances a schema definition with field options from a type
+// enhanceDefinition enhances a schema definition with field options from a type.
+// Single pass over properties - applies constraints, required, and titles.
 func enhanceDefinition(defSchema *jsonschema.Schema, t reflect.Type, autoGenerateTitles bool) {
 	if defSchema.Properties == nil {
 		return
 	}
 
 	// Collect field options from type and embedded structs
-	fieldOptions := collectFieldOptionsWithEmbedded(t)
-
-	// Apply field options to properties that have Field{Name}() methods
-	applyFieldOptions(defSchema, t, fieldOptions, autoGenerateTitles)
-
-	// Ensure all properties have titles (even those without Field{Name}() methods)
-	ensureAllPropertiesHaveTitles(defSchema, autoGenerateTitles)
-}
-
-// collectFieldOptionsWithEmbedded collects field options from a type and its embedded structs
-func collectFieldOptionsWithEmbedded(t reflect.Type) map[string]godantic.FieldOptionInfo {
-	// Scan Field{Name}() methods
 	fieldOptions := godantic.ScanTypeFieldOptions(t)
-
-	// Also collect from embedded structs (jsonschema inlines them)
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			embeddedOpts := godantic.ScanTypeFieldOptions(field.Type)
-			// Merge (parent's options take precedence)
-			for name, opts := range embeddedOpts {
+			for name, opts := range godantic.ScanTypeFieldOptions(field.Type) {
 				if _, exists := fieldOptions[name]; !exists {
 					fieldOptions[name] = opts
 				}
@@ -169,26 +154,28 @@ func collectFieldOptionsWithEmbedded(t reflect.Type) map[string]godantic.FieldOp
 		}
 	}
 
-	return fieldOptions
-}
+	// Track which properties have field options
+	enhanced := make(map[string]bool)
 
-// applyFieldOptions applies constraints and titles for fields with Field{Name}() methods
-func applyFieldOptions(defSchema *jsonschema.Schema, t reflect.Type, fieldOptions map[string]godantic.FieldOptionInfo, autoGenerateTitles bool) {
+	// Apply field options to properties with Field{Name}() methods
 	for fieldName, opts := range fieldOptions {
-		jsonName := getJSONNameForField(t, fieldName)
-		prop := getPropertyFromSchema(defSchema, jsonName, fieldName)
+		jsonName := reflectutil.GoFieldToJSONName(t, fieldName)
+		prop, _ := defSchema.Properties.Get(jsonName)
 		if prop == nil {
-			continue
+			prop, _ = defSchema.Properties.Get(fieldName)
+			if prop == nil {
+				continue
+			}
+			jsonName = fieldName
 		}
 
 		// Replace empty interface schemas
 		if isEmptyInterfaceSchema(prop) {
-			newProp := &jsonschema.Schema{}
-			defSchema.Properties.Set(jsonName, newProp)
-			prop = newProp
+			prop = &jsonschema.Schema{}
+			defSchema.Properties.Set(jsonName, prop)
 		}
 
-		// Mark as required if specified
+		// Mark as required
 		if opts.Required && !slices.Contains(defSchema.Required, jsonName) {
 			defSchema.Required = append(defSchema.Required, jsonName)
 		}
@@ -196,80 +183,26 @@ func applyFieldOptions(defSchema *jsonschema.Schema, t reflect.Type, fieldOption
 		// Apply constraints
 		applyConstraints(prop, opts.Constraints)
 
-		// Add title if needed
-		if autoGenerateTitles && prop.Title == "" {
+		// Add title
+		if prop.Title == "" {
 			prop.Title = toTitleCase(fieldName)
 		}
 
-		// Ensure empty schemas get a title (prevents 'true' serialization)
-		if isSchemaEmpty(prop) && prop.Title == "" {
-			prop.Title = toTitleCase(fieldName)
-		}
-	}
-}
-
-// getJSONNameForField finds the JSON name for a field (checks embedded structs too)
-func getJSONNameForField(t reflect.Type, fieldName string) string {
-	// Try direct field first
-	if field, ok := t.FieldByName(fieldName); ok {
-		return parseJSONTag(field.Tag.Get("json"), fieldName)
+		enhanced[jsonName] = true
 	}
 
-	// Try embedded structs
-	for i := 0; i < t.NumField(); i++ {
-		embField := t.Field(i)
-		if embField.Anonymous && embField.Type.Kind() == reflect.Struct {
-			if field, ok := embField.Type.FieldByName(fieldName); ok {
-				return parseJSONTag(field.Tag.Get("json"), fieldName)
+	// Handle remaining properties without field options (auto-titles)
+	if autoGenerateTitles {
+		for pair := defSchema.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			if enhanced[pair.Key] {
+				continue
 			}
-		}
-	}
-
-	return fieldName
-}
-
-// parseJSONTag extracts the JSON name from a json struct tag
-func parseJSONTag(jsonTag, defaultName string) string {
-	if jsonTag == "" {
-		return defaultName
-	}
-	if idx := strings.Index(jsonTag, ","); idx != -1 {
-		return jsonTag[:idx]
-	}
-	return jsonTag
-}
-
-// getPropertyFromSchema gets a property by name, trying both the JSON name and field name
-func getPropertyFromSchema(defSchema *jsonschema.Schema, jsonName, fieldName string) *jsonschema.Schema {
-	if prop, ok := defSchema.Properties.Get(jsonName); ok && prop != nil {
-		return prop
-	}
-	if prop, ok := defSchema.Properties.Get(fieldName); ok && prop != nil {
-		return prop
-	}
-	return nil
-}
-
-// isSchemaEmpty checks if a schema has no type information
-func isSchemaEmpty(s *jsonschema.Schema) bool {
-	return s.Type == "" && s.Ref == "" && len(s.OneOf) == 0 && len(s.AnyOf) == 0 && len(s.AllOf) == 0
-}
-
-// ensureAllPropertiesHaveTitles adds titles to all properties (even without Field{Name}() methods)
-func ensureAllPropertiesHaveTitles(defSchema *jsonschema.Schema, autoGenerateTitles bool) {
-	for pair := defSchema.Properties.Oldest(); pair != nil; pair = pair.Next() {
-		jsonName := pair.Key
-		prop := pair.Value
-
-		// Replace empty interface schemas with proper schemas
-		if isEmptyInterfaceSchema(prop) {
-			newProp := &jsonschema.Schema{
-				Title: toTitleCase(jsonName),
+			prop := pair.Value
+			if isEmptyInterfaceSchema(prop) {
+				defSchema.Properties.Set(pair.Key, &jsonschema.Schema{Title: toTitleCase(pair.Key)})
+			} else if prop.Title == "" {
+				prop.Title = toTitleCase(pair.Key)
 			}
-			defSchema.Properties.Set(jsonName, newProp)
-		} else if autoGenerateTitles && prop.Title == "" {
-			// Add title to all properties when auto-generation is enabled
-			prop.Title = toTitleCase(jsonName)
 		}
 	}
 }

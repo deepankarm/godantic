@@ -12,6 +12,7 @@ import (
 
 	"github.com/deepankarm/godantic/pkg/godantic"
 	"github.com/deepankarm/godantic/pkg/godantic/schema"
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -503,7 +504,7 @@ func extractParametersFromType(t reflect.Type, paramLocation string, paramNames 
 		}
 
 		paramSchema := map[string]any{
-			"type": godantic.GetJSONSchemaType(field.Type),
+			"type": reflectutil.JSONSchemaType(field.Type),
 		}
 
 		required := false

@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 	"github.com/invopop/jsonschema"
 )
 
@@ -237,7 +238,7 @@ func createSchemaForType(t reflect.Type) *jsonschema.Schema {
 	}
 
 	// Handle primitives and maps using shared type mapping
-	typeName := godantic.GetJSONSchemaType(t)
+	typeName := reflectutil.JSONSchemaType(t)
 	if typeName != "" {
 		return &jsonschema.Schema{Type: typeName}
 	}

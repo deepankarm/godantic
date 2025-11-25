@@ -4,47 +4,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
+
+	"github.com/deepankarm/godantic/pkg/internal/errors"
 )
 
-// ValidationError represents a validation error with location information
-type ValidationError struct {
-	Loc     []string // Path to the field, e.g., ["Address", "ZipCode"]
-	Message string   // Human-readable error message
-	Type    string   // Error type, e.g., "required", "constraint", "format"
-}
+// Re-exported types from internal/errors for public API.
+type (
+	ValidationError  = errors.ValidationError
+	ValidationErrors = errors.ValidationErrors
+	ErrorType        = errors.ErrorType
+)
 
-// Error implements the error interface
-func (e ValidationError) Error() string {
-	if len(e.Loc) == 0 {
-		return e.Message
-	}
-	return fmt.Sprintf("%s: %s", strings.Join(e.Loc, "."), e.Message)
-}
-
-type ValidationErrors []ValidationError
-
-func (es ValidationErrors) Error() string {
-	if len(es) == 0 {
-		return "validation errors: (none)"
-	}
-	if len(es) == 1 {
-		return es[0].Error()
-	}
-	var msgs []string
-	for _, e := range es {
-		msgs = append(msgs, e.Error())
-	}
-	return fmt.Sprintf("validation errors (%d): %s", len(es), strings.Join(msgs, "; "))
-}
-
-func (es ValidationErrors) Unwrap() []error {
-	errs := make([]error, len(es))
-	for i, e := range es {
-		errs[i] = e
-	}
-	return errs
-}
+// Error type constants - re-exported for public API.
+// Usage: err.Type == godantic.ErrorTypeRequired
+const (
+	ErrorTypeRequired             = errors.ErrorTypeRequired
+	ErrorTypeConstraint           = errors.ErrorTypeConstraint
+	ErrorTypeInternal             = errors.ErrorTypeInternal
+	ErrorTypeJSONDecode           = errors.ErrorTypeJSONDecode
+	ErrorTypeJSONEncode           = errors.ErrorTypeJSONEncode
+	ErrorTypeHookError            = errors.ErrorTypeHookError
+	ErrorTypeDiscriminatorMissing = errors.ErrorTypeDiscriminatorMissing
+	ErrorTypeDiscriminatorInvalid = errors.ErrorTypeDiscriminatorInvalid
+	ErrorTypeMismatch             = errors.ErrorTypeMismatch
+	ErrorTypeMarshalError         = errors.ErrorTypeMarshalError
+)
 
 // Ordered is a constraint for types that support comparison
 type Ordered interface {
@@ -144,183 +128,7 @@ func (v *Validator[T]) scanFieldOptions() {
 
 func (v *Validator[T]) Validate(obj *T) ValidationErrors {
 	objPtr := reflect.ValueOf(obj)
-	return validateFieldsWithReflection(objPtr, v.fieldOptions, []string{}, v.validateUnionConstraints)
-}
-
-// validateDiscriminatorValue validates a single discriminated union value
-func validateDiscriminatorValue(value any, discriminatorField string, mapping map[string]any, path []string) *ValidationError {
-	valReflect := reflect.ValueOf(value)
-
-	// Handle pointer types
-	if valReflect.Kind() == reflect.Pointer {
-		if valReflect.IsNil() {
-			return &ValidationError{
-				Loc:     path,
-				Message: "discriminated union value cannot be nil",
-				Type:    "constraint",
-			}
-		}
-		valReflect = valReflect.Elem()
-	}
-
-	if valReflect.Kind() != reflect.Struct {
-		return &ValidationError{
-			Loc:     path,
-			Message: "discriminated union requires a struct type",
-			Type:    "constraint",
-		}
-	}
-
-	discField := getFieldByJSONName(valReflect, discriminatorField)
-	if !discField.IsValid() {
-		return &ValidationError{
-			Loc:     path,
-			Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField),
-			Type:    "constraint",
-		}
-	}
-
-	discValue := fmt.Sprintf("%v", discField.Interface())
-
-	if _, ok := mapping[discValue]; !ok {
-		validValues := make([]string, 0, len(mapping))
-		for k := range mapping {
-			validValues = append(validValues, k)
-		}
-		return &ValidationError{
-			Loc:     path,
-			Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discValue, validValues),
-			Type:    "constraint",
-		}
-	}
-
-	return nil
-}
-
-// validateUnionConstraints validates union (anyOf) and discriminated union (oneOf) constraints
-func (v *Validator[T]) validateUnionConstraints(value any, constraints map[string]any, path []string) *ValidationError {
-	// Check for discriminated union first (more specific)
-	if discriminatorConstraint, ok := constraints[ConstraintDiscriminator]; ok {
-		if discMap, ok := discriminatorConstraint.(map[string]any); ok {
-			discriminatorField, _ := discMap["propertyName"].(string)
-			mapping, _ := discMap["mapping"].(map[string]any)
-
-			if discriminatorField != "" && mapping != nil {
-				valReflect := reflect.ValueOf(value)
-
-				// Handle slices of discriminated unions
-				if valReflect.Kind() == reflect.Slice {
-					for i := 0; i < valReflect.Len(); i++ {
-						elemPath := append(path, fmt.Sprintf("[%d]", i))
-						if err := validateDiscriminatorValue(valReflect.Index(i).Interface(), discriminatorField, mapping, elemPath); err != nil {
-							return err
-						}
-					}
-					return nil
-				}
-
-				// Single discriminated union value
-				return validateDiscriminatorValue(value, discriminatorField, mapping, path)
-			}
-		}
-	}
-
-	// Check for simple union (anyOf)
-	var allowedTypes []string
-	var complexTypes []any
-
-	// Collect primitive type constraints
-	if anyOf, ok := constraints[ConstraintAnyOf]; ok {
-		if anyOfSlice, ok := anyOf.([]map[string]string); ok {
-			for _, typeMap := range anyOfSlice {
-				if typeName, ok := typeMap["type"]; ok {
-					allowedTypes = append(allowedTypes, typeName)
-				}
-			}
-		}
-	}
-
-	// Collect complex type constraints
-	if anyOfTypes, ok := constraints["anyOfTypes"]; ok {
-		if types, ok := anyOfTypes.([]any); ok {
-			complexTypes = types
-		}
-	}
-
-	// If no union constraints, validation passes
-	if len(allowedTypes) == 0 && len(complexTypes) == 0 {
-		return nil
-	}
-
-	// Get the actual type of the value
-	valReflect := reflect.ValueOf(value)
-	valType := valReflect.Type()
-
-	// Check against complex types first
-	for _, complexType := range complexTypes {
-		expectedType := reflect.TypeOf(complexType)
-		if valType == expectedType {
-			return nil // Match found
-		}
-		// Also check if value is a slice/array and the element types match
-		if valType.Kind() == reflect.Slice && expectedType.Kind() == reflect.Slice {
-			if valType.Elem() == expectedType.Elem() {
-				return nil // Match found
-			}
-		}
-	}
-
-	// Check against primitive types
-	for _, allowedType := range allowedTypes {
-		if matchesJSONSchemaType(valReflect, allowedType) {
-			return nil // Match found
-		}
-	}
-
-	// No match found
-	allTypes := append([]string{}, allowedTypes...)
-	for _, ct := range complexTypes {
-		allTypes = append(allTypes, reflect.TypeOf(ct).String())
-	}
-
-	return &ValidationError{
-		Loc:     path,
-		Message: fmt.Sprintf("value does not match any allowed type: %v", allTypes),
-		Type:    "constraint",
-	}
-}
-
-// matchesJSONSchemaType checks if a reflect.Value matches a JSON Schema type name
-func matchesJSONSchemaType(val reflect.Value, schemaType string) bool {
-	// Handle null check (value-based)
-	if schemaType == "null" {
-		if !val.IsValid() {
-			return true
-		}
-		switch val.Kind() {
-		case reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
-			return val.IsNil()
-		default:
-			return false
-		}
-	}
-
-	if !val.IsValid() {
-		return false
-	}
-
-	// Use shared type mapping
-	got := GetJSONSchemaType(val.Type())
-	if got == schemaType {
-		return true
-	}
-
-	// Special case: "number" schema type allows integer values
-	if schemaType == "number" && got == "integer" {
-		return true
-	}
-
-	return false
+	return walkValidate(objPtr)
 }
 
 // ApplyDefaults applies default values to zero-valued fields that have defaults defined.
@@ -328,7 +136,7 @@ func matchesJSONSchemaType(val reflect.Value, schemaType string) bool {
 // Returns an error if reflection fails.
 func (v *Validator[T]) ApplyDefaults(obj *T) error {
 	objPtr := reflect.ValueOf(obj)
-	return scanner.applyDefaultsToStruct(objPtr, v.fieldOptions)
+	return walkDefaults(objPtr)
 }
 
 // Marshal unmarshals JSON data, applies defaults, and validates.
@@ -346,49 +154,34 @@ func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 	var obj T
 	objPtr := reflect.New(reflect.TypeOf(obj))
 
-	// Check if struct has nested discriminated unions
-	if hasNestedDiscriminatedUnions(v.fieldOptions) {
-		// Use custom recursive unmarshaling
-		if errs := processRecursive(objPtr, data); errs != nil {
-			return nil, errs
-		}
-		obj = objPtr.Elem().Interface().(T)
-	} else {
-		// BeforeValidate hook for simple structs (returns modified JSON bytes)
-		data, errs := applyBeforeValidateHook[[]byte](objPtr, data)
-		if errs != nil {
-			return nil, errs
-		}
+	// BeforeValidate hook: transform JSON before unmarshaling
+	data, hookErrs := applyBeforeValidateHook[[]byte](objPtr, data)
+	if hookErrs != nil {
+		return nil, hookErrs
+	}
 
-		// Standard JSON unmarshal
-		if err := json.Unmarshal(data, &obj); err != nil {
-			return nil, ValidationErrors{{
-				Loc:     []string{},
-				Message: fmt.Sprintf("json unmarshal failed: %v", err),
-				Type:    "json_decode",
-			}}
+	// Use the tree walker for unmarshal + defaults + validation
+	errs := walkParse(objPtr, data)
+
+	// Return nil on JSON decode errors (before we have a valid struct)
+	for _, e := range errs {
+		if e.Type == "json_decode" {
+			return nil, errs
 		}
 	}
 
-	if err := v.ApplyDefaults(&obj); err != nil {
-		return nil, ValidationErrors{{
-			Loc:     []string{},
-			Message: fmt.Sprintf("apply defaults failed: %v", err),
-			Type:    "internal",
-		}}
-	}
+	obj = objPtr.Elem().Interface().(T)
 
-	errs := v.Validate(&obj)
 	if len(errs) > 0 {
 		return &obj, errs
 	}
 
 	// AfterValidate hook: transform struct after validation
-	if err := v.callAfterValidateHook(&obj); err != nil {
+	if err := callAfterValidateHook(&obj); err != nil {
 		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("AfterValidate hook failed: %v", err),
-			Type:    "hook_error",
+			Type:    ErrorTypeHookError,
 		}}
 	}
 
@@ -408,11 +201,11 @@ func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
 	}
 
 	// BeforeSerialize hook: transform struct before validation
-	if err := v.callBeforeSerializeHook(obj); err != nil {
+	if err := callBeforeSerializeHook(obj); err != nil {
 		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("BeforeSerialize hook failed: %v", err),
-			Type:    "hook_error",
+			Type:    ErrorTypeHookError,
 		}}
 	}
 
@@ -427,7 +220,7 @@ func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
 		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("apply defaults failed: %v", err),
-			Type:    "internal",
+			Type:    ErrorTypeInternal,
 		}}
 	}
 
@@ -437,17 +230,17 @@ func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
 		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("json marshal failed: %v", err),
-			Type:    "json_encode",
+			Type:    ErrorTypeJSONEncode,
 		}}
 	}
 
 	// AfterSerialize hook: transform JSON after marshaling
-	data, err = v.callAfterSerializeHook(data)
+	data, err = callAfterSerializeHook[T](data)
 	if err != nil {
 		return nil, ValidationErrors{{
 			Loc:     []string{},
 			Message: fmt.Sprintf("AfterSerialize hook failed: %v", err),
-			Type:    "hook_error",
+			Type:    ErrorTypeHookError,
 		}}
 	}
 
@@ -461,57 +254,4 @@ func (v *Validator[T]) FieldOptions() map[string]any {
 		result[k] = v
 	}
 	return result
-}
-
-// callNoArgHook calls a hook method with no arguments that returns error
-func callNoArgHook(obj any, methodName string) error {
-	method := reflect.ValueOf(obj).MethodByName(methodName)
-	if !method.IsValid() {
-		return nil
-	}
-
-	results := method.Call([]reflect.Value{})
-	if len(results) > 0 && !results[0].IsNil() {
-		if err, ok := results[0].Interface().(error); ok {
-			return err
-		}
-	}
-	return nil
-}
-
-// callAfterValidateHook calls AfterValidate if the type implements it
-func (v *Validator[T]) callAfterValidateHook(obj *T) error {
-	return callNoArgHook(obj, "AfterValidate")
-}
-
-// callBeforeSerializeHook calls BeforeSerialize if the type implements it
-func (v *Validator[T]) callBeforeSerializeHook(obj *T) error {
-	return callNoArgHook(obj, "BeforeSerialize")
-}
-
-// callAfterSerializeHook calls AfterSerialize if the type implements it
-func (v *Validator[T]) callAfterSerializeHook(data []byte) ([]byte, error) {
-	var obj T
-	method := reflect.ValueOf(&obj).MethodByName("AfterSerialize")
-	if !method.IsValid() {
-		return data, nil
-	}
-
-	results := method.Call([]reflect.Value{reflect.ValueOf(data)})
-	if len(results) < 2 {
-		return data, nil
-	}
-
-	// First result is []byte, second is error
-	if !results[1].IsNil() {
-		if err, ok := results[1].Interface().(error); ok {
-			return nil, err
-		}
-	}
-
-	if resultData, ok := results[0].Interface().([]byte); ok {
-		return resultData, nil
-	}
-
-	return data, nil
 }

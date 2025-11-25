@@ -47,7 +47,7 @@ func (v *Validator[T]) ValidateFromStringMap(data map[string]string) (*T, Valida
 			{
 				Loc:     []string{},
 				Message: "failed to marshal data: " + err.Error(),
-				Type:    "marshal_error",
+				Type:    ErrorTypeMarshalError,
 			},
 		}
 	}
@@ -105,7 +105,7 @@ func (v *Validator[T]) ValidateFromMultiValueMap(data map[string][]string) (*T, 
 			{
 				Loc:     []string{},
 				Message: "failed to marshal data: " + err.Error(),
-				Type:    "marshal_error",
+				Type:    ErrorTypeMarshalError,
 			},
 		}
 	}
