@@ -1,6 +1,9 @@
 package godantic
 
-import "reflect"
+import (
+	"fmt"
+	"reflect"
+)
 
 // ValidatorOption configures a Validator with additional capabilities
 type ValidatorOption interface {
@@ -16,6 +19,18 @@ type validatorConfig struct {
 type discriminatorConfig struct {
 	field    string                  // The discriminator field name (e.g., "event", "type")
 	variants map[string]reflect.Type // Map of discriminator value -> concrete type
+}
+
+// lookupConcreteType looks up the concrete type for a discriminator value
+func (cfg *discriminatorConfig) lookupConcreteType(discriminatorValue string) (reflect.Type, *ValidationError) {
+	if concreteType, ok := cfg.variants[discriminatorValue]; ok {
+		return concreteType, nil
+	}
+	validValues := make([]string, 0, len(cfg.variants))
+	for k := range cfg.variants {
+		validValues = append(validValues, k)
+	}
+	return nil, &ValidationError{Loc: []string{cfg.field}, Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discriminatorValue, validValues), Type: ErrorTypeDiscriminatorInvalid}
 }
 
 // WithDiscriminator configures a validator to handle discriminated unions (interfaces).

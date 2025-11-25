@@ -4,502 +4,141 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
+
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 )
 
 // validateDiscriminatedUnion handles validation for discriminated union types (interfaces)
 func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminatorConfig) (*T, ValidationErrors) {
-	instance, errs := v.newUnionInstanceFromJSON(data, cfg)
+	instance, errs := newUnionFromJSON[T](data, cfg)
 	if errs != nil {
 		return nil, errs
 	}
 
-	if decodeErr := processRecursive(instance.ptr, data); decodeErr != nil {
-		return nil, decodeErr
+	// Use Walker for unmarshal + defaults + validation (single traversal)
+	if walkErrs := walkParse(instance.ptr, data); len(walkErrs) > 0 {
+		for _, e := range walkErrs {
+			if e.Type == ErrorTypeJSONDecode {
+				return nil, walkErrs
+			}
+		}
+		result := instance.Result()
+		return &result, walkErrs
 	}
 
-	if validationErrs := validateAndApplyDefaults(instance.ptr, instance.elemType); len(validationErrs) > 0 {
-		result := convertToInterfaceType[T](instance.ptr, instance.concreteType)
-		return &result, validationErrs
-	}
-
-	result := convertToInterfaceType[T](instance.ptr, instance.concreteType)
+	result := instance.Result()
 	return &result, nil
 }
 
 // unmarshalDiscriminatedUnion handles unmarshaling (struct → JSON) for discriminated unions
 func (v *Validator[T]) unmarshalDiscriminatedUnion(obj *T, cfg *discriminatorConfig) ([]byte, ValidationErrors) {
-	instance, err := v.newUnionInstanceFromStruct(obj, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	if syncErr := instance.syncNestedFromStruct(); syncErr != nil {
-		return nil, syncErr
-	}
-
-	if errs := validateAndApplyDefaults(instance.ptr, instance.elemType); len(errs) > 0 {
+	instance, errs := newUnionFromStruct[T](obj, cfg)
+	if errs != nil {
 		return nil, errs
 	}
 
-	data, marshalErr := json.Marshal(instance.ptr.Interface())
-	if marshalErr != nil {
-		return nil, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("json marshal failed: %v", marshalErr), Type: "json_encode"}}
+	if err := walkDefaults(instance.ptr); err != nil {
+		return nil, ValidationErrors{{Message: fmt.Sprintf("apply defaults failed: %v", err), Type: ErrorTypeInternal}}
+	}
+	if errs := walkValidate(instance.ptr); len(errs) > 0 {
+		return nil, errs
+	}
+
+	data, err := json.Marshal(instance.ptr.Interface())
+	if err != nil {
+		return nil, ValidationErrors{{Message: fmt.Sprintf("json marshal failed: %v", err), Type: ErrorTypeJSONEncode}}
 	}
 	return data, nil
 }
 
-// lookupConcreteType looks up the concrete type for a discriminator value
-func lookupConcreteType(discriminatorValue string, cfg *discriminatorConfig) (reflect.Type, *ValidationError) {
-	if concreteType, ok := cfg.variants[discriminatorValue]; ok {
-		return concreteType, nil
-	}
-	validValues := make([]string, 0, len(cfg.variants))
-	for k := range cfg.variants {
-		validValues = append(validValues, k)
-	}
-	return nil, &ValidationError{Loc: []string{cfg.field}, Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discriminatorValue, validValues), Type: "discriminator_invalid"}
-}
-
-// unwrapPointerType returns the element type if the type is a pointer, otherwise returns the type itself
-func unwrapPointerType(t reflect.Type) reflect.Type {
-	if t.Kind() == reflect.Pointer {
-		return t.Elem()
-	}
-	return t
-}
-
-// validateAndApplyDefaults scans field options, applies defaults, and validates
-func validateAndApplyDefaults(concretePtr reflect.Value, elemType reflect.Type) ValidationErrors {
-	concreteFieldOptions := scanner.scanFieldOptionsFromType(elemType)
-	if err := scanner.applyDefaultsToStruct(concretePtr, concreteFieldOptions); err != nil {
-		return ValidationErrors{{
-			Loc:     []string{},
-			Message: fmt.Sprintf("apply defaults failed: %v", err),
-			Type:    "internal",
-		}}
-	}
-
-	return validateFieldsWithReflection(concretePtr, concreteFieldOptions, []string{}, nil)
-}
-
-// convertToInterfaceType converts a concrete value to interface type T
-func convertToInterfaceType[T any](concretePtr reflect.Value, originalType reflect.Type) T {
-	var result T
-	if originalType.Kind() == reflect.Pointer {
-		result = concretePtr.Interface().(T)
-	} else {
-		result = concretePtr.Elem().Interface().(T)
-	}
-	return result
-}
-
-// makeAddressable creates an addressable value from a possibly non-addressable value
-func makeAddressable(value reflect.Value, typ reflect.Type) reflect.Value {
-	if value.CanAddr() {
-		return value.Addr()
-	}
-	newValue := reflect.New(typ)
-	newValue.Elem().Set(value)
-	return newValue
-}
-
-// findFieldByJSONTag finds a struct field by its JSON tag name or Go field name
-func findFieldByJSONTag(value reflect.Value, typ reflect.Type, jsonName string) reflect.Value {
-	if value.Kind() == reflect.Pointer {
-		value = value.Elem()
-		typ = typ.Elem()
-	}
-
-	if field := value.FieldByName(jsonName); field.IsValid() {
-		return field
-	}
-
-	// Try capitalized version (common case: "event" -> "Event")
-	if len(jsonName) > 0 {
-		capitalized := strings.ToUpper(jsonName[:1]) + jsonName[1:]
-		if field := value.FieldByName(capitalized); field.IsValid() {
-			return field
-		}
-	}
-
-	// Search by JSON tag
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		jsonTag := field.Tag.Get("json")
-		if jsonTag == "" {
-			continue
-		}
-		tagName := strings.Split(jsonTag, ",")[0]
-		if tagName == jsonName {
-			return value.Field(i)
-		}
-	}
-
-	return reflect.Value{}
-}
-
-// unmarshalDiscriminatedUnionValue unmarshals a single discriminated union value from JSON
-func unmarshalDiscriminatedUnionValue(data []byte, discriminatorField string, mapping map[string]any, fieldName string) (reflect.Value, ValidationErrors) {
-	var fieldMap map[string]any
-	if err := json.Unmarshal(data, &fieldMap); err != nil {
-		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName}, Message: fmt.Sprintf("failed to parse discriminated union field: %v", err), Type: "json_decode"}}
-	}
-
-	discriminatorValue, ok := fieldMap[discriminatorField]
-	if !ok {
-		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName, discriminatorField}, Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField), Type: "discriminator_missing"}}
-	}
-
-	concreteTypeExample, ok := mapping[fmt.Sprintf("%v", discriminatorValue)]
-	if !ok {
-		validValues := make([]string, 0, len(mapping))
-		for k := range mapping {
-			validValues = append(validValues, k)
-		}
-		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName, discriminatorField}, Message: fmt.Sprintf("invalid discriminator value '%v', expected one of: %v", discriminatorValue, validValues), Type: "discriminator_invalid"}}
-	}
-
-	concreteType := reflect.TypeOf(concreteTypeExample)
-	elemType := unwrapPointerType(concreteType)
-	concretePtr := reflect.New(elemType)
-
-	if err := processRecursive(concretePtr, data); err != nil {
-		return reflect.Value{}, err
-	}
-
-	// Validate the unmarshaled value
-	if validationErrs := validateAndApplyDefaults(concretePtr, elemType); len(validationErrs) > 0 {
-		return reflect.Value{}, validationErrs
-	}
-
-	if concreteType.Kind() == reflect.Pointer {
-		return concretePtr, nil
-	}
-	return concretePtr.Elem(), nil
-}
-
-// unmarshalDiscriminatedUnionSlice unmarshals a slice of discriminated union values from JSON
-func unmarshalDiscriminatedUnionSlice(data []byte, discriminatorField string, mapping map[string]any, fieldName string, sliceType reflect.Type) (reflect.Value, ValidationErrors) {
-	var arrayData []json.RawMessage
-	if err := json.Unmarshal(data, &arrayData); err != nil {
-		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName}, Message: fmt.Sprintf("failed to parse array: %v", err), Type: "json_decode"}}
-	}
-
-	sliceVal := reflect.MakeSlice(sliceType, 0, len(arrayData))
-
-	for idx, elemData := range arrayData {
-		elemPath := fmt.Sprintf("%s[%d]", fieldName, idx)
-		elemVal, err := unmarshalDiscriminatedUnionValue(elemData, discriminatorField, mapping, elemPath)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		sliceVal = reflect.Append(sliceVal, elemVal)
-	}
-
-	return sliceVal, nil
-}
-
-// processRecursive unmarshals JSON into a value, handling discriminated unions recursively
-func processRecursive(valPtr reflect.Value, data []byte) ValidationErrors {
-	// valPtr must be a pointer
-	targetType := valPtr.Type().Elem()
-
-	// Unwrap nested pointers (e.g., **T -> T)
-	for targetType.Kind() == reflect.Pointer {
-		if valPtr.Elem().IsNil() {
-			valPtr.Elem().Set(reflect.New(targetType.Elem()))
-		}
-		valPtr = valPtr.Elem()
-		targetType = targetType.Elem()
-	}
-
-	// Base case: Not a struct, use standard JSON unmarshal
-	if targetType.Kind() != reflect.Struct {
-		if err := json.Unmarshal(data, valPtr.Interface()); err != nil {
-			return ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("json unmarshal failed: %v", err), Type: "json_decode"}}
-		}
-		return nil
-	}
-
-	// Struct case: apply BeforeValidate hook if it exists
-	rawData, err := applyBeforeValidateHook[map[string]json.RawMessage](valPtr, data)
-	if err != nil {
-		return err
-	}
-
-	fieldOptions := scanner.scanFieldOptionsFromType(targetType)
-	structVal := valPtr.Elem()
-
-	for i := 0; i < targetType.NumField(); i++ {
-		field := targetType.Field(i)
-		fieldVal := structVal.Field(i)
-		if !fieldVal.CanSet() {
-			continue
-		}
-
-		// Handle embedded/anonymous fields - they use the full JSON data
-		if field.Anonymous {
-			fieldPtr := reflect.New(field.Type)
-			if err := processRecursive(fieldPtr, data); err != nil {
-				return err
-			}
-			fieldVal.Set(fieldPtr.Elem())
-			continue
-		}
-
-		jsonName := getJSONFieldName(field)
-		if jsonName == "-" {
-			continue // Skip ignored fields
-		}
-
-		rawFieldData, hasFieldData := rawData[jsonName]
-		if !hasFieldData {
-			continue
-		}
-
-		// Check for discriminated union constraint
-		var discriminatorConstraint map[string]any
-		hasDiscriminator := false
-		if opts, ok := fieldOptions[field.Name]; ok {
-			discriminatorConstraint, hasDiscriminator = opts.Constraints()[ConstraintDiscriminator].(map[string]any)
-		}
-
-		if hasDiscriminator {
-			discriminatorField, _ := discriminatorConstraint["propertyName"].(string)
-			mapping, _ := discriminatorConstraint["mapping"].(map[string]any)
-
-			// Check if field is a slice of discriminated unions
-			if field.Type.Kind() == reflect.Slice {
-				sliceVal, err := unmarshalDiscriminatedUnionSlice(rawFieldData, discriminatorField, mapping, field.Name, field.Type)
-				if err != nil {
-					return err
-				}
-				fieldVal.Set(sliceVal)
-			} else {
-				concreteVal, err := unmarshalDiscriminatedUnionValue(rawFieldData, discriminatorField, mapping, field.Name)
-				if err != nil {
-					return err
-				}
-				fieldVal.Set(concreteVal)
-			}
-		} else {
-			// Regular field - recurse
-			fieldPtr := reflect.New(field.Type)
-			if err := processRecursive(fieldPtr, rawFieldData); err != nil {
-				return err
-			}
-			fieldVal.Set(fieldPtr.Elem())
-		}
-	}
-	return nil
-}
-
-// getJSONFieldName returns the JSON field name for a struct field
-func getJSONFieldName(field reflect.StructField) string {
-	jsonTag := field.Tag.Get("json")
-	if jsonTag == "" {
-		return field.Name
-	}
-	tagName := strings.Split(jsonTag, ",")[0]
-	return tagName // Return "-" as-is so caller can skip it
-}
-
-// getFieldByJSONName finds a struct field by its JSON name (handles json tags)
-func getFieldByJSONName(val reflect.Value, jsonName string) reflect.Value {
-	t := val.Type()
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if getJSONFieldName(field) == jsonName {
-			return val.Field(i)
-		}
-	}
-	return reflect.Value{}
-}
-
-// unionInstance encapsulates the reusable discriminated union processing state
-type unionInstance struct {
+// unionInstance encapsulates discriminated union processing state
+type unionInstance[T any] struct {
 	ptr          reflect.Value
-	elemType     reflect.Type
 	concreteType reflect.Type
-	fieldOptions map[string]*fieldOptionHolder
 }
 
-func (v *Validator[T]) newUnionInstanceFromJSON(data []byte, cfg *discriminatorConfig) (*unionInstance, ValidationErrors) {
+// Result converts the internal value to the target interface type T.
+func (u *unionInstance[T]) Result() T {
+	return reflectutil.ConvertToInterfaceType[T](u.ptr, u.concreteType)
+}
+
+// newUnionFromJSON creates a union instance by peeking at JSON to find discriminator.
+func newUnionFromJSON[T any](data []byte, cfg *discriminatorConfig) (*unionInstance[T], ValidationErrors) {
 	var peek map[string]any
 	if err := json.Unmarshal(data, &peek); err != nil {
-		return nil, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("json unmarshal failed: %v", err), Type: "json_decode"}}
+		return nil, ValidationErrors{{Message: fmt.Sprintf("json unmarshal failed: %v", err), Type: ErrorTypeJSONDecode}}
 	}
 
-	discriminatorValue, ok := peek[cfg.field]
+	discValue, ok := peek[cfg.field]
 	if !ok {
-		return nil, ValidationErrors{{Loc: []string{cfg.field}, Message: fmt.Sprintf("discriminator field '%s' not found", cfg.field), Type: "discriminator_missing"}}
+		return nil, ValidationErrors{{Loc: []string{cfg.field}, Message: fmt.Sprintf("discriminator field '%s' not found", cfg.field), Type: ErrorTypeDiscriminatorMissing}}
 	}
 
-	concreteType, validationErr := lookupConcreteType(fmt.Sprintf("%v", discriminatorValue), cfg)
+	concreteType, validationErr := cfg.lookupConcreteType(fmt.Sprintf("%v", discValue))
 	if validationErr != nil {
 		return nil, ValidationErrors{*validationErr}
 	}
 
-	elemType := unwrapPointerType(concreteType)
-	return &unionInstance{
-		ptr:          reflect.New(elemType),
-		elemType:     elemType,
-		concreteType: concreteType,
-		fieldOptions: scanner.scanFieldOptionsFromType(elemType),
-	}, nil
+	elemType := reflectutil.UnwrapPointer(concreteType)
+	return &unionInstance[T]{ptr: reflect.New(elemType), concreteType: concreteType}, nil
 }
 
-func (v *Validator[T]) newUnionInstanceFromStruct(obj *T, cfg *discriminatorConfig) (*unionInstance, ValidationErrors) {
-	objValue := reflect.ValueOf(obj)
-	if objValue.Kind() != reflect.Pointer {
-		return nil, ValidationErrors{{Loc: []string{}, Message: "obj must be a pointer", Type: "internal"}}
-	}
-
-	concreteValue := objValue.Elem()
-	if !concreteValue.IsValid() || concreteValue.IsZero() {
-		return nil, ValidationErrors{{Loc: []string{}, Message: "obj is nil or zero value", Type: "internal"}}
-	}
-
-	if concreteValue.Kind() == reflect.Interface {
-		concreteValue = concreteValue.Elem()
-		if !concreteValue.IsValid() {
-			return nil, ValidationErrors{{Loc: []string{}, Message: "interface value is nil", Type: "internal"}}
-		}
+// newUnionFromStruct creates a union instance from an existing struct value.
+func newUnionFromStruct[T any](obj *T, cfg *discriminatorConfig) (*unionInstance[T], ValidationErrors) {
+	concreteValue, errs := unwrapToConcreteValue(reflect.ValueOf(obj))
+	if errs != nil {
+		return nil, errs
 	}
 
 	concreteType := concreteValue.Type()
-	discriminatorField := findFieldByJSONTag(concreteValue, concreteType, cfg.field)
-	if !discriminatorField.IsValid() {
-		return nil, ValidationErrors{{Loc: []string{cfg.field}, Message: fmt.Sprintf("discriminator field '%s' not found in type %s", cfg.field, concreteType.Name()), Type: "discriminator_missing"}}
+	discField := reflectutil.FieldByJSONName(concreteValue, concreteType, cfg.field)
+	if !discField.IsValid() {
+		return nil, ValidationErrors{{Loc: []string{cfg.field}, Message: fmt.Sprintf("discriminator field '%s' not found in type %s", cfg.field, concreteType.Name()), Type: ErrorTypeDiscriminatorMissing}}
 	}
 
-	expectedType, validationErr := lookupConcreteType(fmt.Sprintf("%v", discriminatorField.Interface()), cfg)
+	expectedType, validationErr := cfg.lookupConcreteType(fmt.Sprintf("%v", discField.Interface()))
 	if validationErr != nil {
 		return nil, ValidationErrors{*validationErr}
 	}
 
-	expectedElemType := unwrapPointerType(expectedType)
-	if concreteType != expectedElemType && concreteType != expectedType {
-		return nil, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("type mismatch: expected %s, got %s", expectedType.Name(), concreteType.Name()), Type: "type_error"}}
+	if err := checkTypeMatch(concreteType, expectedType); err != nil {
+		return nil, err
 	}
 
-	elemType := unwrapPointerType(concreteType)
 	structValue := concreteValue
 	if concreteValue.Kind() == reflect.Pointer {
 		structValue = concreteValue.Elem()
 	}
+	elemType := reflectutil.UnwrapPointer(concreteType)
 
-	return &unionInstance{
-		ptr:          makeAddressable(structValue, elemType),
-		elemType:     elemType,
-		concreteType: concreteType,
-		fieldOptions: scanner.scanFieldOptionsFromType(elemType),
-	}, nil
+	return &unionInstance[T]{ptr: reflectutil.MakeAddressable(structValue, elemType), concreteType: concreteType}, nil
 }
 
-func (i *unionInstance) syncNestedFromStruct() ValidationErrors {
-	if !hasNestedDiscriminatedUnions(i.fieldOptions) {
-		return nil
+// unwrapToConcreteValue unwraps pointer/interface to get the concrete struct value.
+func unwrapToConcreteValue(v reflect.Value) (reflect.Value, ValidationErrors) {
+	if v.Kind() != reflect.Pointer {
+		return reflect.Value{}, ValidationErrors{{Message: "obj must be a pointer", Type: ErrorTypeInternal}}
 	}
 
-	tempJSON, err := json.Marshal(i.ptr.Interface())
-	if err != nil {
-		return ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("json marshal failed: %v", err), Type: "json_encode"}}
+	v = v.Elem()
+	if !v.IsValid() || v.IsZero() {
+		return reflect.Value{}, ValidationErrors{{Message: "obj is nil or zero value", Type: ErrorTypeInternal}}
 	}
-	return processRecursive(i.ptr, tempJSON)
+
+	if v.Kind() == reflect.Interface {
+		v = v.Elem()
+		if !v.IsValid() {
+			return reflect.Value{}, ValidationErrors{{Message: "interface value is nil", Type: ErrorTypeInternal}}
+		}
+	}
+	return v, nil
 }
 
-func hasNestedDiscriminatedUnions(fieldOptions map[string]*fieldOptionHolder) bool {
-	for _, opts := range fieldOptions {
-		if _, ok := opts.Constraints()[ConstraintDiscriminator]; ok {
-			return true
-		}
+// checkTypeMatch validates the concrete type matches the expected type from discriminator.
+func checkTypeMatch(concreteType, expectedType reflect.Type) ValidationErrors {
+	expectedElem := reflectutil.UnwrapPointer(expectedType)
+	if concreteType != expectedElem && concreteType != expectedType {
+		return ValidationErrors{{Message: fmt.Sprintf("type mismatch: expected %s, got %s", expectedType.Name(), concreteType.Name()), Type: ErrorTypeMismatch}}
 	}
-	return false
-}
-
-// applyBeforeValidateHook applies BeforeValidate hook and converts result to requested type
-func applyBeforeValidateHook[R any](valPtr reflect.Value, data []byte) (R, ValidationErrors) {
-	var zero R
-
-	// Check if hook exists
-	ptrType := valPtr.Type()
-	method, hasHook := ptrType.MethodByName("BeforeValidate")
-
-	if !hasHook {
-		// No hook - parse directly to requested type
-		return parseToType[R](data)
-	}
-
-	// Parse to map[string]any for modification
-	var rawDataAny map[string]any
-	if err := json.Unmarshal(data, &rawDataAny); err != nil {
-		return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to parse JSON: %v", err), Type: "json_decode"}}
-	}
-
-	// Call the hook
-	results := method.Func.Call([]reflect.Value{valPtr, reflect.ValueOf(rawDataAny)})
-	if len(results) > 0 && !results[0].IsNil() {
-		if err, ok := results[0].Interface().(error); ok {
-			return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("BeforeValidate hook failed: %v", err), Type: "hook_error"}}
-		}
-	}
-
-	// Convert modified map to requested type
-	return convertMapToType[R](rawDataAny)
-}
-
-// parseToType parses JSON bytes to the requested type (no hook path)
-func parseToType[R any](data []byte) (R, ValidationErrors) {
-	var zero R
-	var result any
-
-	// Check what type R is and parse accordingly
-	switch any(zero).(type) {
-	case map[string]json.RawMessage:
-		var rawData map[string]json.RawMessage
-		if err := json.Unmarshal(data, &rawData); err != nil {
-			return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to parse JSON: %v", err), Type: "json_decode"}}
-		}
-		result = rawData
-	case []byte:
-		result = data
-	default:
-		return zero, ValidationErrors{{Loc: []string{}, Message: "unsupported return type for BeforeValidate hook", Type: "internal"}}
-	}
-
-	return result.(R), nil
-}
-
-// convertMapToType converts map[string]any to the requested type (with hook path)
-func convertMapToType[R any](rawDataAny map[string]any) (R, ValidationErrors) {
-	var zero R
-	var result any
-
-	// Check what type R is and convert accordingly
-	switch any(zero).(type) {
-	case map[string]json.RawMessage:
-		// Convert map[string]any to map[string]json.RawMessage field-by-field
-		rawData := make(map[string]json.RawMessage, len(rawDataAny))
-		for key, value := range rawDataAny {
-			valueBytes, err := json.Marshal(value)
-			if err != nil {
-				return zero, ValidationErrors{{Loc: []string{key}, Message: fmt.Sprintf("failed to marshal field: %v", err), Type: "json_encode"}}
-			}
-			rawData[key] = valueBytes
-		}
-		result = rawData
-	case []byte:
-		// Marshal entire map to JSON bytes
-		modifiedData, err := json.Marshal(rawDataAny)
-		if err != nil {
-			return zero, ValidationErrors{{Loc: []string{}, Message: fmt.Sprintf("failed to marshal modified data: %v", err), Type: "json_encode"}}
-		}
-		result = modifiedData
-	default:
-		return zero, ValidationErrors{{Loc: []string{}, Message: "unsupported return type for BeforeValidate hook", Type: "internal"}}
-	}
-
-	return result.(R), nil
+	return nil
 }
