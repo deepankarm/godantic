@@ -152,6 +152,44 @@ func (v *Validator[T]) validateWithPath(obj *T, path []string) ValidationErrors 
 	return validateFieldsWithReflection(objPtr, v.fieldOptions, path, v.validateUnionConstraints)
 }
 
+// validateDiscriminatorValue validates a single discriminated union value
+func validateDiscriminatorValue(value any, discriminatorField string, mapping map[string]any, path []string) *ValidationError {
+	valReflect := reflect.ValueOf(value)
+
+	if valReflect.Kind() != reflect.Struct {
+		return &ValidationError{
+			Loc:     path,
+			Message: "discriminated union requires a struct type",
+			Type:    "constraint",
+		}
+	}
+
+	discField := getFieldByJSONName(valReflect, discriminatorField)
+	if !discField.IsValid() {
+		return &ValidationError{
+			Loc:     path,
+			Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField),
+			Type:    "constraint",
+		}
+	}
+
+	discValue := fmt.Sprintf("%v", discField.Interface())
+
+	if _, ok := mapping[discValue]; !ok {
+		validValues := make([]string, 0, len(mapping))
+		for k := range mapping {
+			validValues = append(validValues, k)
+		}
+		return &ValidationError{
+			Loc:     path,
+			Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discValue, validValues),
+			Type:    "constraint",
+		}
+	}
+
+	return nil
+}
+
 // validateUnionConstraints validates union (anyOf) and discriminated union (oneOf) constraints
 func (v *Validator[T]) validateUnionConstraints(value any, constraints map[string]any, path []string) *ValidationError {
 	// Check for discriminated union first (more specific)
@@ -161,43 +199,21 @@ func (v *Validator[T]) validateUnionConstraints(value any, constraints map[strin
 			mapping, _ := discMap["mapping"].(map[string]any)
 
 			if discriminatorField != "" && mapping != nil {
-				// Value must be a struct
 				valReflect := reflect.ValueOf(value)
-				if valReflect.Kind() != reflect.Struct {
-					return &ValidationError{
-						Loc:     path,
-						Message: "discriminated union requires a struct type",
-						Type:    "constraint",
+
+				// Handle slices of discriminated unions
+				if valReflect.Kind() == reflect.Slice {
+					for i := 0; i < valReflect.Len(); i++ {
+						elemPath := append(path, fmt.Sprintf("[%d]", i))
+						if err := validateDiscriminatorValue(valReflect.Index(i).Interface(), discriminatorField, mapping, elemPath); err != nil {
+							return err
+						}
 					}
+					return nil
 				}
 
-				// Get the discriminator field value
-				discField := valReflect.FieldByName(discriminatorField)
-				if !discField.IsValid() {
-					return &ValidationError{
-						Loc:     path,
-						Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField),
-						Type:    "constraint",
-					}
-				}
-
-				discValue := fmt.Sprintf("%v", discField.Interface())
-
-				// Check if the discriminator value is in the allowed mapping
-				if _, ok := mapping[discValue]; !ok {
-					validValues := make([]string, 0, len(mapping))
-					for k := range mapping {
-						validValues = append(validValues, k)
-					}
-					return &ValidationError{
-						Loc:     path,
-						Message: fmt.Sprintf("invalid discriminator value '%s', expected one of: %v", discValue, validValues),
-						Type:    "constraint",
-					}
-				}
-
-				// Valid discriminated union value
-				return nil
+				// Single discriminated union value
+				return validateDiscriminatorValue(value, discriminatorField, mapping, path)
 			}
 		}
 	}
@@ -320,14 +336,25 @@ func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 		return v.validateDiscriminatedUnion(data, v.config.discriminator)
 	}
 
-	// Standard struct validation
 	var obj T
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return nil, ValidationErrors{{
-			Loc:     []string{},
-			Message: fmt.Sprintf("json unmarshal failed: %v", err),
-			Type:    "json_decode",
-		}}
+	objPtr := reflect.New(reflect.TypeOf(obj))
+
+	// Check if struct has nested discriminated unions
+	if hasNestedDiscriminatedUnions(v.fieldOptions) {
+		// Use custom recursive unmarshaling
+		if errs := processRecursive(objPtr, data); errs != nil {
+			return nil, errs
+		}
+		obj = objPtr.Elem().Interface().(T)
+	} else {
+		// Standard JSON unmarshal
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return nil, ValidationErrors{{
+				Loc:     []string{},
+				Message: fmt.Sprintf("json unmarshal failed: %v", err),
+				Type:    "json_decode",
+			}}
+		}
 	}
 
 	if err := v.ApplyDefaults(&obj); err != nil {

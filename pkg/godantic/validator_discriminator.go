@@ -139,6 +139,62 @@ func findFieldByJSONTag(value reflect.Value, typ reflect.Type, jsonName string) 
 	return reflect.Value{}
 }
 
+// unmarshalDiscriminatedUnionValue unmarshals a single discriminated union value from JSON
+func unmarshalDiscriminatedUnionValue(data []byte, discriminatorField string, mapping map[string]any, fieldName string) (reflect.Value, ValidationErrors) {
+	var fieldMap map[string]any
+	if err := json.Unmarshal(data, &fieldMap); err != nil {
+		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName}, Message: fmt.Sprintf("failed to parse discriminated union field: %v", err), Type: "json_decode"}}
+	}
+
+	discriminatorValue, ok := fieldMap[discriminatorField]
+	if !ok {
+		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName, discriminatorField}, Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField), Type: "discriminator_missing"}}
+	}
+
+	concreteTypeExample, ok := mapping[fmt.Sprintf("%v", discriminatorValue)]
+	if !ok {
+		validValues := make([]string, 0, len(mapping))
+		for k := range mapping {
+			validValues = append(validValues, k)
+		}
+		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName, discriminatorField}, Message: fmt.Sprintf("invalid discriminator value '%v', expected one of: %v", discriminatorValue, validValues), Type: "discriminator_invalid"}}
+	}
+
+	concreteType := reflect.TypeOf(concreteTypeExample)
+	elemType := unwrapPointerType(concreteType)
+	concretePtr := reflect.New(elemType)
+
+	if err := processRecursive(concretePtr, data); err != nil {
+		return reflect.Value{}, err
+	}
+
+	if concreteType.Kind() == reflect.Pointer {
+		return concretePtr, nil
+	}
+	return concretePtr.Elem(), nil
+}
+
+// unmarshalDiscriminatedUnionSlice unmarshals a slice of discriminated union values from JSON
+func unmarshalDiscriminatedUnionSlice(data []byte, discriminatorField string, mapping map[string]any, fieldName string, sliceType reflect.Type) (reflect.Value, ValidationErrors) {
+	var arrayData []json.RawMessage
+	if err := json.Unmarshal(data, &arrayData); err != nil {
+		return reflect.Value{}, ValidationErrors{{Loc: []string{fieldName}, Message: fmt.Sprintf("failed to parse array: %v", err), Type: "json_decode"}}
+	}
+
+	sliceVal := reflect.MakeSlice(sliceType, 0, len(arrayData))
+
+	for idx, elemData := range arrayData {
+		elemPath := fmt.Sprintf("%s[%d]", fieldName, idx)
+		elemVal, err := unmarshalDiscriminatedUnionValue(elemData, discriminatorField, mapping, elemPath)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		sliceVal = reflect.Append(sliceVal, elemVal)
+	}
+
+	return sliceVal, nil
+}
+
 // processRecursive unmarshals JSON into a value, handling discriminated unions recursively
 func processRecursive(val reflect.Value, data []byte) ValidationErrors {
 	// Handle pointer types - recurse into the element
@@ -203,44 +259,22 @@ func processRecursive(val reflect.Value, data []byte) ValidationErrors {
 		}
 
 		if hasDiscriminator {
-			// Handle Union
 			discriminatorField, _ := discriminatorConstraint["propertyName"].(string)
 			mapping, _ := discriminatorConstraint["mapping"].(map[string]any)
 
-			// Peek at discriminator value
-			var fieldMap map[string]any
-			if err := json.Unmarshal(rawFieldData, &fieldMap); err != nil {
-				return ValidationErrors{{Loc: []string{field.Name}, Message: fmt.Sprintf("failed to parse discriminated union field: %v", err), Type: "json_decode"}}
-			}
-
-			discriminatorValue, ok := fieldMap[discriminatorField]
-			if !ok {
-				return ValidationErrors{{Loc: []string{field.Name, discriminatorField}, Message: fmt.Sprintf("discriminator field '%s' not found", discriminatorField), Type: "discriminator_missing"}}
-			}
-
-			// Look up concrete type
-			concreteTypeExample, ok := mapping[fmt.Sprintf("%v", discriminatorValue)]
-			if !ok {
-				validValues := make([]string, 0, len(mapping))
-				for k := range mapping {
-					validValues = append(validValues, k)
+			// Check if field is a slice of discriminated unions
+			if field.Type.Kind() == reflect.Slice {
+				sliceVal, err := unmarshalDiscriminatedUnionSlice(rawFieldData, discriminatorField, mapping, field.Name, field.Type)
+				if err != nil {
+					return err
 				}
-				return ValidationErrors{{Loc: []string{field.Name, discriminatorField}, Message: fmt.Sprintf("invalid discriminator value '%v', expected one of: %v", discriminatorValue, validValues), Type: "discriminator_invalid"}}
-			}
-
-			concreteType := reflect.TypeOf(concreteTypeExample)
-			elemType := unwrapPointerType(concreteType)
-			concretePtr := reflect.New(elemType)
-
-			// Recurse into the concrete type
-			if err := processRecursive(concretePtr, rawFieldData); err != nil {
-				return err
-			}
-
-			if concreteType.Kind() == reflect.Pointer {
-				fieldVal.Set(concretePtr)
+				fieldVal.Set(sliceVal)
 			} else {
-				fieldVal.Set(concretePtr.Elem())
+				concreteVal, err := unmarshalDiscriminatedUnionValue(rawFieldData, discriminatorField, mapping, field.Name)
+				if err != nil {
+					return err
+				}
+				fieldVal.Set(concreteVal)
 			}
 		} else {
 			// Regular field - recurse
@@ -262,6 +296,18 @@ func getJSONFieldName(field reflect.StructField) string {
 	}
 	tagName := strings.Split(jsonTag, ",")[0]
 	return tagName // Return "-" as-is so caller can skip it
+}
+
+// getFieldByJSONName finds a struct field by its JSON name (handles json tags)
+func getFieldByJSONName(val reflect.Value, jsonName string) reflect.Value {
+	t := val.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if getJSONFieldName(field) == jsonName {
+			return val.Field(i)
+		}
+	}
+	return reflect.Value{}
 }
 
 // unionInstance encapsulates the reusable discriminated union processing state
