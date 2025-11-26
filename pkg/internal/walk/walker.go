@@ -118,12 +118,12 @@ func (w *Walker) Walk(val reflect.Value, data []byte) error {
 // walkStruct walks a struct value and its fields.
 func (w *Walker) walkStruct(val reflect.Value, rawFields map[string]json.RawMessage, path []string, isRoot bool) error {
 	// Unwrap pointers/interfaces and check for cycles
-	for val.Kind() == reflect.Ptr || val.Kind() == reflect.Interface {
+	for val.Kind() == reflect.Pointer || val.Kind() == reflect.Interface {
 		if val.IsNil() {
 			return nil
 		}
 		// Track pointer address to detect cycles (only for pointers, not interfaces)
-		if val.Kind() == reflect.Ptr {
+		if val.Kind() == reflect.Pointer {
 			ptr := val.Pointer()
 			if w.visited[ptr] {
 				return nil // Already visited this address, skip to prevent infinite recursion

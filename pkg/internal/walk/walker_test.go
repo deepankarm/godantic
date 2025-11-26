@@ -36,7 +36,7 @@ type mockScanner struct {
 }
 
 func (m *mockScanner) ScanFieldOptions(t reflect.Type) map[string]*FieldOptions {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if opts, ok := m.options[t.Name()]; ok {
