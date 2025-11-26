@@ -237,24 +237,15 @@ func (p *UnmarshalProcessor) unmarshalDiscriminatedSlice(ctx *FieldContext, disc
 }
 
 // ShouldDescend controls recursion for unmarshaling.
-// We don't want to descend into discriminated union fields since we handle them specially.
+// We allow descent into discriminated unions so the walker can validate elements.
 func (p *UnmarshalProcessor) ShouldDescend(ctx *FieldContext) bool {
-	// Don't descend if we handled it as a discriminated union
-	if ctx.FieldOptions != nil {
-		if _, ok := ctx.FieldOptions.Constraints["discriminator"]; ok {
-			return false
-		}
-	}
-
-	val := unwrapValue(ctx.Value)
+	// Allow descent even for discriminated unions - we've already unmarshaled them,
+	// and now the walker needs to descend to validate individual fields of each element
+	val := reflectutil.UnwrapValue(ctx.Value)
 
 	// Descend into slices (let walker handle elements)
 	if val.Kind() == reflect.Slice {
-		elemType := val.Type().Elem()
-		if elemType.Kind() == reflect.Pointer {
-			elemType = elemType.Elem()
-		}
-		return elemType.Kind() == reflect.Struct && !reflectutil.IsBasicType(elemType)
+		return reflectutil.IsWalkableSliceElem(val.Type())
 	}
 
 	// Descend into non-basic struct types

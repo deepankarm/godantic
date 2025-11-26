@@ -91,6 +91,32 @@ func UnwrapPointer(t reflect.Type) reflect.Type {
 	return t
 }
 
+// UnwrapValue unwraps pointers and interfaces to get the underlying value.
+func UnwrapValue(v reflect.Value) reflect.Value {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return v
+		}
+		v = v.Elem()
+	}
+	return v
+}
+
+// IsWalkableSliceElem checks if a slice's element type should be walked.
+// Returns true for structs (non-basic) and interfaces (discriminated unions).
+func IsWalkableSliceElem(sliceType reflect.Type) bool {
+	elemType := sliceType.Elem()
+	if elemType.Kind() == reflect.Pointer {
+		elemType = elemType.Elem()
+	}
+	// Interfaces (for discriminated unions) - actual elements are concrete structs
+	if elemType.Kind() == reflect.Interface {
+		return true
+	}
+	// Non-basic structs
+	return elemType.Kind() == reflect.Struct && !IsBasicType(elemType)
+}
+
 // CollectStructTypes recursively collects all struct types from a type.
 func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
 	if t == nil {

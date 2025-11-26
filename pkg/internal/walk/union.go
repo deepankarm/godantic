@@ -38,7 +38,7 @@ func (p *UnionValidateProcessor) ProcessField(ctx *FieldContext) error {
 	}
 
 	// Skip zero values (already handled by ValidateProcessor)
-	val := unwrapValue(ctx.Value)
+	val := reflectutil.UnwrapValue(ctx.Value)
 	if isZero(val) {
 		return nil
 	}
@@ -68,7 +68,7 @@ func (p *UnionValidateProcessor) validateDiscriminator(ctx *FieldContext, discCo
 		return nil
 	}
 
-	val := unwrapValue(ctx.Value)
+	val := reflectutil.UnwrapValue(ctx.Value)
 
 	// Handle slices of discriminated unions
 	if val.Kind() == reflect.Slice {
@@ -163,7 +163,7 @@ func (p *UnionValidateProcessor) validateAnyOf(ctx *FieldContext) *ValidationErr
 		return nil
 	}
 
-	val := unwrapValue(ctx.Value)
+	val := reflectutil.UnwrapValue(ctx.Value)
 	valType := val.Type()
 
 	// Check against complex types first

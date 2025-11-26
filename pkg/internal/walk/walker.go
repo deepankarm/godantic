@@ -216,17 +216,13 @@ func (w *Walker) walkStruct(val reflect.Value, rawFields map[string]json.RawMess
 
 // walkSlice walks each element of a slice.
 func (w *Walker) walkSlice(slice reflect.Value, rawJSON json.RawMessage, path []string) error {
-	slice = unwrapValue(slice)
+	slice = reflectutil.UnwrapValue(slice)
 	if slice.Kind() != reflect.Slice || slice.IsNil() {
 		return nil
 	}
 
-	// Check if elements are structs worth walking
-	elemType := slice.Type().Elem()
-	if elemType.Kind() == reflect.Pointer {
-		elemType = elemType.Elem()
-	}
-	if elemType.Kind() != reflect.Struct || reflectutil.IsBasicType(elemType) {
+	// Check if elements are worth walking (structs or interfaces)
+	if !reflectutil.IsWalkableSliceElem(slice.Type()) {
 		return nil
 	}
 
@@ -269,7 +265,7 @@ func (w *Walker) shouldDescend(ctx *FieldContext) bool {
 	}
 
 	// Default: descend into non-basic struct types
-	val := unwrapValue(ctx.Value)
+	val := reflectutil.UnwrapValue(ctx.Value)
 	if val.Kind() == reflect.Slice {
 		return true // Let walkSlice decide
 	}
@@ -286,17 +282,6 @@ func (w *Walker) Errors() []ValidationError {
 		errs = append(errs, p.GetErrors()...)
 	}
 	return errs
-}
-
-// unwrapValue unwraps pointers and interfaces to get the underlying value.
-func unwrapValue(v reflect.Value) reflect.Value {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return v
-		}
-		v = v.Elem()
-	}
-	return v
 }
 
 // appendPath appends a field name to the path.

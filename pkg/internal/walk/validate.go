@@ -40,7 +40,7 @@ func (p *ValidateProcessor) ProcessField(ctx *FieldContext) error {
 		return nil
 	}
 
-	val := unwrapValue(ctx.Value)
+	val := reflectutil.UnwrapValue(ctx.Value)
 	_, hasDefault := ctx.FieldOptions.Constraints["default"]
 	isStruct := val.Kind() == reflect.Struct && !reflectutil.IsBasicType(val.Type())
 
@@ -87,7 +87,7 @@ func (p *ValidateProcessor) ProcessField(ctx *FieldContext) error {
 
 // ShouldDescend returns true for nested structs that have validation.
 func (p *ValidateProcessor) ShouldDescend(ctx *FieldContext) bool {
-	val := unwrapValue(ctx.Value)
+	val := reflectutil.UnwrapValue(ctx.Value)
 
 	// Always descend into slices (let walker handle elements)
 	if val.Kind() == reflect.Slice {

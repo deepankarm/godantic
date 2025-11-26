@@ -406,3 +406,116 @@ func TestSliceOfDiscriminatedUnions(t *testing.T) {
 		}
 	})
 }
+
+// --- Test validation within discriminated union slice elements ---
+
+type BlockItem interface {
+	GetType() string
+}
+
+type SimpleBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func (s SimpleBlock) GetType() string { return s.Type }
+
+// BlockWithRequiredField has a required ID field
+type BlockWithRequiredField struct {
+	Type string `json:"type"`
+	Data string `json:"data"`
+	ID   string `json:"id"`
+}
+
+func (b BlockWithRequiredField) GetType() string { return b.Type }
+
+func (b *BlockWithRequiredField) FieldID() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+type BlockContainer struct {
+	Title string      `json:"title"`
+	Items []BlockItem `json:"items"`
+}
+
+func (b *BlockContainer) FieldTitle() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (b *BlockContainer) FieldItems() godantic.FieldOptions[[]BlockItem] {
+	return godantic.Field(
+		godantic.Required[[]BlockItem](),
+		godantic.DiscriminatedUnion[[]BlockItem]("type", map[string]any{
+			"simple":  &SimpleBlock{},
+			"complex": &BlockWithRequiredField{},
+		}),
+	)
+}
+
+func TestSliceOfDiscriminatedUnions_Validation(t *testing.T) {
+	validator := godantic.NewValidator[BlockContainer]()
+
+	t.Run("valid items pass validation", func(t *testing.T) {
+		jsonStr := `{
+			"title": "Test Document",
+			"items": [
+				{"type": "simple", "text": "Hello"},
+				{"type": "complex", "data": "Some data", "id": "item-123"}
+			]
+		}`
+
+		container, errs := validator.Marshal([]byte(jsonStr))
+		if len(errs) != 0 {
+			t.Fatalf("expected no errors, got %v", errs)
+		}
+
+		if container.Title != "Test Document" {
+			t.Errorf("expected title 'Test Document', got %s", container.Title)
+		}
+		if len(container.Items) != 2 {
+			t.Errorf("expected 2 items, got %d", len(container.Items))
+		}
+	})
+
+	t.Run("missing required field in slice element fails validation", func(t *testing.T) {
+		jsonStr := `{
+			"title": "Test Document",
+			"items": [
+				{"type": "complex", "data": "Some data"}
+			]
+		}`
+
+		_, errs := validator.Marshal([]byte(jsonStr))
+		if len(errs) == 0 {
+			t.Fatal("expected validation error for missing id, got none")
+		}
+
+		// Should report error for ID field
+		found := false
+		for _, err := range errs {
+			if err.Loc[len(err.Loc)-1] == "ID" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected error for ID field, got: %v", errs)
+		}
+	})
+
+	t.Run("multiple elements with validation errors", func(t *testing.T) {
+		jsonStr := `{
+			"title": "Test Document",
+			"items": [
+				{"type": "complex", "data": "First"},
+				{"type": "simple", "text": "Some text"},
+				{"type": "complex", "data": "Second"}
+			]
+		}`
+
+		_, errs := validator.Marshal([]byte(jsonStr))
+		if len(errs) < 2 {
+			t.Fatalf("expected at least 2 validation errors (both complex blocks missing id), got %d: %v", len(errs), errs)
+		}
+	})
+}
