@@ -1,5 +1,7 @@
 # Godantic
 
+[![Tests](https://github.com/deepankarm/godantic/workflows/Tests/badge.svg)](https://github.com/deepankarm/godantic/actions/workflows/test.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/deepankarm/godantic.svg)](https://pkg.go.dev/github.com/deepankarm/godantic) [![Go Report Card](https://goreportcard.com/badge/github.com/deepankarm/godantic)](https://goreportcard.com/report/github.com/deepankarm/godantic) [![Go Version](https://img.shields.io/github/go-mod/go-version/deepankarm/godantic)](go.mod)
+
 **FastAPI-style automatic OpenAPI generation and validation for Go.** Define your types once with validation rules, get runtime validation, JSON schemas, and complete OpenAPI specs—without struct tags.
 
 Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). Works with OpenAI/Anthropic/Gemini structured output APIs, Gin REST APIs, and any system that needs JSON Schema or OpenAPI 3.0.3 specs.
