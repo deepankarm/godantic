@@ -137,7 +137,7 @@ func BenchmarkValidate_Simple(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -170,7 +170,7 @@ func BenchmarkValidate_Medium(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -193,7 +193,7 @@ func BenchmarkConstraint_Email(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -223,7 +223,7 @@ func BenchmarkConstraint_Pattern(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -242,7 +242,7 @@ func BenchmarkConstraint_MinMaxLen(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -261,7 +261,7 @@ func BenchmarkConstraint_MinMaxValue(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -276,7 +276,7 @@ func BenchmarkConstraint_MinMaxValue(b *testing.B) {
 func BenchmarkValidatorCreation_Simple(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_ = godantic.NewValidator[SimpleUser]()
 	}
 }
@@ -284,7 +284,7 @@ func BenchmarkValidatorCreation_Simple(b *testing.B) {
 func BenchmarkValidatorCreation_Medium(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_ = godantic.NewValidator[MediumUser]()
 	}
 }
@@ -304,7 +304,7 @@ func BenchmarkValidate_ReuseValidator(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -322,7 +322,7 @@ func BenchmarkValidate_RecreateValidator(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		validator := godantic.NewValidator[SimpleUser]()
 		errs := validator.Validate(&user)
 		if len(errs) != 0 {

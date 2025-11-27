@@ -225,7 +225,7 @@ func BenchmarkDiscriminator_Manual(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		var owner ManualPetOwner
 		if err := json.Unmarshal(data, &owner); err != nil {
 			b.Fatalf("unmarshal failed: %v", err)
@@ -241,7 +241,7 @@ func BenchmarkDiscriminator_Manual(b *testing.B) {
 func BenchmarkDiscriminator_ValidatorCreation(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_ = godantic.NewValidator[SimplePetOwner]()
 	}
 }

@@ -144,7 +144,7 @@ func (p *SchemaPetOwner) FieldPet() godantic.FieldOptions[SchemaAnimal] {
 func BenchmarkSchemaGeneration_Simple(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		gen := schema.NewGenerator[SimpleModel]()
 		_, err := gen.Generate()
 		if err != nil {
@@ -156,7 +156,7 @@ func BenchmarkSchemaGeneration_Simple(b *testing.B) {
 func BenchmarkSchemaGeneration_Medium(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		gen := schema.NewGenerator[MediumModel]()
 		_, err := gen.Generate()
 		if err != nil {
@@ -168,7 +168,7 @@ func BenchmarkSchemaGeneration_Medium(b *testing.B) {
 func BenchmarkSchemaGeneration_DiscriminatedUnion(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		gen := schema.NewGenerator[SchemaPetOwner]()
 		_, err := gen.Generate()
 		if err != nil {
@@ -187,7 +187,7 @@ func BenchmarkSchemaGeneration_ReuseGenerator(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, err := gen.Generate()
 		if err != nil {
 			b.Fatalf("schema generation failed: %v", err)
@@ -198,7 +198,7 @@ func BenchmarkSchemaGeneration_ReuseGenerator(b *testing.B) {
 func BenchmarkSchemaGeneration_RecreateGenerator(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		gen := schema.NewGenerator[SimpleModel]()
 		_, err := gen.Generate()
 		if err != nil {
@@ -214,7 +214,7 @@ func BenchmarkSchemaGeneration_RecreateGenerator(b *testing.B) {
 func BenchmarkSchemaGeneration_WithAutoTitles(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		gen := schema.NewGenerator[SimpleModel]().WithAutoTitles(true)
 		_, err := gen.Generate()
 		if err != nil {
@@ -226,7 +226,7 @@ func BenchmarkSchemaGeneration_WithAutoTitles(b *testing.B) {
 func BenchmarkSchemaGeneration_WithoutAutoTitles(b *testing.B) {
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		gen := schema.NewGenerator[SimpleModel]().WithAutoTitles(false)
 		_, err := gen.Generate()
 		if err != nil {
