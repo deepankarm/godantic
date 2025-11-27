@@ -474,6 +474,36 @@ if errs := validator.Validate(&result); len(errs) > 0 {
 
 See [`examples/openai-structured-output/`](./examples/openai-structured-output/) and [`examples/gemini-structured-output/`](./examples/gemini-structured-output/) for complete working examples.
 
+### Streaming Partial JSON
+
+Parse incomplete JSON as it streams from LLM APIs. Essential for real-time UI updates during long-running generation.
+
+```go
+// Create streaming parser
+parser := godantic.NewStreamParser[Response]()
+
+// Feed chunks as they arrive from LLM API
+for chunk := range llmStream {
+    result, state, _ := parser.Feed(chunk)
+    
+    if state.IsComplete {
+        // Full response received and validated
+        fmt.Println("Complete:", result)
+    } else {
+        // Show partial data in real-time
+        fmt.Printf("Streaming... waiting for: %v\n", state.WaitingFor())
+    }
+}
+```
+
+**Features:**
+- Repairs incomplete JSON (closes unclosed strings, arrays, objects)
+- Tracks incomplete fields via `state.WaitingFor()`
+- Skips validation for incomplete fields
+- Applies defaults automatically
+
+See [`examples/llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/) for a complete working example with Gemini streaming.
+
 ## Gin Integration (gingodantic)
 
 Automatic OpenAPI spec generation and validation for Gin APIs. Define your request/response types once, get runtime validation, OpenAPI specs, and interactive documentation.
@@ -628,11 +658,12 @@ go test ./... -v -cover
 
 Check out [`examples/`](./examples/) for complete working examples:
 
-- **[`gin-api/`](./examples/gin-api/)** - Complete Gin REST API with automatic OpenAPI generation, validation for all parameter types (path, query, headers, cookies, body), and Swagger UI
-- **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions at the interface level
-- **[`openai-structured-output/`](./examples/openai-structured-output/)** - Using godantic with OpenAI's structured output API to extract meeting summaries from text
-- **[`gemini-structured-output/`](./examples/gemini-structured-output/)** - Using godantic with Google Gemini to parse task lists with enums, dates, and unions  
+- **[`openai-structured-output/`](./examples/openai-structured-output/)** - Using godantic with OpenAI's structured output API to extract meeting summaries
+- **[`gemini-structured-output/`](./examples/gemini-structured-output/)** - Using godantic with Google Gemini to parse task lists with enums and unions
+- **[`gin-api/`](./examples/gin-api/)** - Complete Gin REST API with automatic OpenAPI generation and Swagger UI
+- **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions  
+- **[`llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/)** - Streaming partial JSON during long-running generation using Gemini
 
 ---
 
-> Disclaimer: Most of the code and tests are written by Cursor.
+> Disclaimer: Some of the code and most of the tests & docs are written by Cursor.

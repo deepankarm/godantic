@@ -101,7 +101,7 @@ func processStream(chunks <-chan string, startTime time.Time, stats *StreamStats
 		// Clear screen and show current state
 		fmt.Print("\033[2J\033[H")
 		fmt.Println("╔════════════════════════════════════════════════════════════════════╗")
-		fmt.Println("║  godantic.StreamParser - Watch JSON build in real-time!           ║")
+		fmt.Println("║  godantic.StreamParser - Watch JSON build in real-time!            ║")
 		fmt.Println("╚════════════════════════════════════════════════════════════════════╝")
 		fmt.Println()
 
@@ -142,7 +142,7 @@ func main() {
 	}
 
 	fmt.Println("╔════════════════════════════════════════════════════════════════════╗")
-	fmt.Println("║  godantic: Automatic JSON Schema Generation                       ║")
+	fmt.Println("║  godantic: Automatic JSON Schema Generation                        ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
@@ -226,8 +226,8 @@ Project Update:
 	fmt.Println()
 	fmt.Println("════════════════════════════════════════════════════════════════════")
 	fmt.Println("📈 Performance Metrics:")
-	fmt.Printf("  • TTFT (Time To First Token):  %v\n", ttft.Round(time.Millisecond))
-	fmt.Printf("  • Time to first JSON parse:    %v\n", stats.TimeToFirstJSON.Round(time.Millisecond))
-	fmt.Printf("  • Total JSON updates shown:    %d\n", stats.JSONCount)
-	fmt.Printf("  • Total time:                  %v\n", totalTime.Round(time.Millisecond))
+	fmt.Printf("  • TTFT (Time To First Token): %v\n", ttft.Round(time.Millisecond))
+	fmt.Printf("  • Time to first JSON parse:   %v\n", stats.TimeToFirstJSON.Round(time.Millisecond))
+	fmt.Printf("  • JSON updates shown:         %d\n", stats.JSONCount)
+	fmt.Printf("  • Total time:                 %v\n", totalTime.Round(time.Millisecond))
 }
