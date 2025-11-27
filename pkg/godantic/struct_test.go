@@ -9,28 +9,27 @@ import (
 	"github.com/deepankarm/godantic/pkg/godantic"
 )
 
-// Test embedded structs
-type BaseModel struct {
+// ═══════════════════════════════════════════════════════════════════════════
+// Struct-specific test types (embedded, pointers, non-serializable fields)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// TBaseModel tests embedded structs and time.Time validation
+type TBaseModel struct {
 	ID        int
 	CreatedAt time.Time
 }
 
-func (b *BaseModel) FieldID() godantic.FieldOptions[int] {
-	return godantic.Field(
-		godantic.Required[int](),
-		godantic.Min(1),
-	)
+func (b *TBaseModel) FieldID() godantic.FieldOptions[int] {
+	return godantic.Field(godantic.Required[int](), godantic.Min(1))
 }
 
-func (b *BaseModel) FieldCreatedAt() godantic.FieldOptions[time.Time] {
+func (b *TBaseModel) FieldCreatedAt() godantic.FieldOptions[time.Time] {
 	return godantic.Field(
 		godantic.Required[time.Time](),
 		godantic.Validate(func(t time.Time) error {
-			// Validate that timestamp is not in the future
 			if t.After(time.Now()) {
 				return fmt.Errorf("timestamp cannot be in the future")
 			}
-			// Validate that timestamp is not too old (e.g., before 2000)
 			if t.Before(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)) {
 				return fmt.Errorf("timestamp must be after 2000-01-01")
 			}
@@ -39,136 +38,90 @@ func (b *BaseModel) FieldCreatedAt() godantic.FieldOptions[time.Time] {
 	)
 }
 
-// Nested struct
-type Address struct {
+// TAddressWithZip extends address with ZipCode for constraint testing
+type TAddressWithZip struct {
 	Street  string
 	City    string
 	ZipCode string
 }
 
-func (a *Address) FieldStreet() godantic.FieldOptions[string] {
-	return godantic.Field(
-		godantic.Required[string](),
-		godantic.MinLen(3),
-	)
+func (a *TAddressWithZip) FieldStreet() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string](), godantic.MinLen(3))
 }
 
-func (a *Address) FieldCity() godantic.FieldOptions[string] {
-	return godantic.Field(
-		godantic.Required[string](),
-		godantic.MinLen(2),
-	)
+func (a *TAddressWithZip) FieldCity() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string](), godantic.MinLen(2))
 }
 
-func (a *Address) FieldZipCode() godantic.FieldOptions[string] {
-	return godantic.Field(
-		godantic.Required[string](),
-		godantic.MinLen(5),
-		godantic.MaxLen(10),
-	)
+func (a *TAddressWithZip) FieldZipCode() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string](), godantic.MinLen(5), godantic.MaxLen(10))
 }
 
-// Complex struct with embedding, nested structs, pointers, and non-serializable fields
-type ComplexUser struct {
-	BaseModel             // Embedded struct
-	Name      string      // Regular field
-	Email     *string     // Pointer field
-	HomeAddr  Address     // Nested struct
-	WorkAddr  *Address    // Pointer to struct
-	mu        sync.Mutex  // Non-serializable (unexported)
-	Ch        chan string // Channel (exported but non-serializable)
-	Age       int         // Regular field
+// TComplexUser tests embedding, pointers, and non-serializable fields
+type TComplexUser struct {
+	TBaseModel                  // Embedded struct
+	Name       string           // Regular field
+	Email      *string          // Pointer field
+	HomeAddr   TAddressWithZip  // Nested struct
+	WorkAddr   *TAddressWithZip // Pointer to struct
+	mu         sync.Mutex       // Non-serializable (unexported)
+	Ch         chan string      // Channel (exported but non-serializable)
+	Age        int              // Regular field
 }
 
-func (c *ComplexUser) FieldName() godantic.FieldOptions[string] {
-	return godantic.Field(
-		godantic.Required[string](),
-		godantic.MinLen(2),
-	)
+func (c *TComplexUser) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string](), godantic.MinLen(2))
 }
 
-func (c *ComplexUser) FieldEmail() godantic.FieldOptions[*string] {
+func (c *TComplexUser) FieldEmail() godantic.FieldOptions[*string] {
 	return godantic.Field(godantic.Required[*string]())
 }
 
-func (c *ComplexUser) FieldHomeAddr() godantic.FieldOptions[Address] {
-	return godantic.Field(godantic.Required[Address]())
+func (c *TComplexUser) FieldHomeAddr() godantic.FieldOptions[TAddressWithZip] {
+	return godantic.Field(godantic.Required[TAddressWithZip]())
 }
 
-func (c *ComplexUser) FieldAge() godantic.FieldOptions[int] {
-	return godantic.Field(
-		godantic.Required[int](),
-		godantic.Min(0),
-		godantic.Max(150),
-	)
+func (c *TComplexUser) FieldAge() godantic.FieldOptions[int] {
+	return godantic.Field(godantic.Required[int](), godantic.Min(0), godantic.Max(150))
 }
 
 func TestEmbeddedStructs(t *testing.T) {
-	validator := godantic.NewValidator[BaseModel]()
+	validator := godantic.NewValidator[TBaseModel]()
 
-	t.Run("empty embedded struct should fail", func(t *testing.T) {
-		base := BaseModel{ID: 0, CreatedAt: time.Time{}} // Zero time
-		errs := validator.Validate(&base)
-		if len(errs) != 2 {
-			t.Errorf("expected 2 errors, got %d", len(errs))
-		}
-	})
+	tests := []struct {
+		name    string
+		base    TBaseModel
+		wantErr int
+	}{
+		{"empty_fails", TBaseModel{ID: 0, CreatedAt: time.Time{}}, 2},
+		{"valid_passes", TBaseModel{ID: 42, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}, 0},
+		{"future_timestamp_fails", TBaseModel{ID: 42, CreatedAt: time.Now().Add(24 * time.Hour)}, 1},
+		{"old_timestamp_fails", TBaseModel{ID: 42, CreatedAt: time.Date(1999, 12, 31, 0, 0, 0, 0, time.UTC)}, 1},
+	}
 
-	t.Run("valid embedded struct should pass", func(t *testing.T) {
-		base := BaseModel{ID: 42, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
-		errs := validator.Validate(&base)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
-
-	t.Run("future timestamp should fail", func(t *testing.T) {
-		futureTime := time.Now().Add(24 * time.Hour)
-		base := BaseModel{ID: 42, CreatedAt: futureTime}
-		errs := validator.Validate(&base)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-	})
-
-	t.Run("timestamp before 2000 should fail", func(t *testing.T) {
-		oldTime := time.Date(1999, 12, 31, 0, 0, 0, 0, time.UTC)
-		base := BaseModel{ID: 42, CreatedAt: oldTime}
-		errs := validator.Validate(&base)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validator.Validate(&tt.base)
+			if len(errs) != tt.wantErr {
+				t.Errorf("expected %d errors, got %d: %v", tt.wantErr, len(errs), errs)
+			}
+		})
+	}
 }
 
 func TestNestedStructs(t *testing.T) {
-	validator := godantic.NewValidator[Address]()
+	validator := godantic.NewValidator[TAddressWithZip]()
 
-	t.Run("invalid nested struct should fail", func(t *testing.T) {
-		addr := Address{Street: "A", City: "B", ZipCode: "123"}
+	t.Run("invalid_fails", func(t *testing.T) {
+		addr := TAddressWithZip{Street: "A", City: "B", ZipCode: "123"}
 		errs := validator.Validate(&addr)
 		if len(errs) != 3 {
-			t.Errorf("expected 3 errors, got %d", len(errs))
-		}
-		// Check that we got the expected errors (order doesn't matter)
-		errorMsgs := make(map[string]bool)
-		for _, err := range errs {
-			errorMsgs[err.Error()] = true
-		}
-		expectedErrors := []string{
-			"City: length must be >= 2",
-			"Street: length must be >= 3",
-			"ZipCode: length must be >= 5",
-		}
-		for _, expected := range expectedErrors {
-			if !errorMsgs[expected] {
-				t.Errorf("expected error '%s' not found in: %v", expected, errs)
-			}
+			t.Errorf("expected 3 errors, got %d: %v", len(errs), errs)
 		}
 	})
 
-	t.Run("valid nested struct should pass", func(t *testing.T) {
-		addr := Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"}
+	t.Run("valid_passes", func(t *testing.T) {
+		addr := TAddressWithZip{Street: "123 Main St", City: "NYC", ZipCode: "10001"}
 		errs := validator.Validate(&addr)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
@@ -177,169 +130,122 @@ func TestNestedStructs(t *testing.T) {
 }
 
 func TestComplexStructWithEmbedding(t *testing.T) {
-	validator := godantic.NewValidator[ComplexUser]()
+	validator := godantic.NewValidator[TComplexUser]()
 	email := "test@example.com"
+	validAddr := TAddressWithZip{Street: "123 Main St", City: "NYC", ZipCode: "10001"}
+	validTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	t.Run("valid complex struct should pass", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "John Doe",
-			Email:     &email,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			Age:       30,
-			Ch:        make(chan string), // Non-serializable field
+	t.Run("valid_passes", func(t *testing.T) {
+		c := TComplexUser{
+			TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+			Name:       "John Doe", Email: &email, HomeAddr: validAddr, Age: 30,
+			Ch: make(chan string),
 		}
-
-		errs := validator.Validate(&complex)
+		errs := validator.Validate(&c)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
 		}
 	})
 
-	t.Run("nil pointer in required field should fail", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Jane Doe",
-			Email:     nil, // Required but nil
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			Age:       25,
+	t.Run("nil_required_pointer_fails", func(t *testing.T) {
+		c := TComplexUser{
+			TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+			Name:       "Jane", Email: nil, HomeAddr: validAddr, Age: 25,
 		}
+		errs := validator.Validate(&c)
+		if len(errs) != 1 || errs[0].Error() != "Email: required field" {
+			t.Errorf("expected Email required error, got: %v", errs)
+		}
+	})
 
-		errs := validator.Validate(&complex)
+	t.Run("nil_optional_pointer_passes", func(t *testing.T) {
+		c := TComplexUser{
+			TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+			Name:       "Bob", Email: &email, HomeAddr: validAddr, WorkAddr: nil, Age: 35,
+		}
+		errs := validator.Validate(&c)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("non_nil_pointer_struct_passes", func(t *testing.T) {
+		workAddr := TAddressWithZip{Street: "456 Corp", City: "LA", ZipCode: "90001"}
+		c := TComplexUser{
+			TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+			Name:       "Alice", Email: &email, HomeAddr: validAddr, WorkAddr: &workAddr, Age: 28,
+		}
+		errs := validator.Validate(&c)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("invalid_age_fails", func(t *testing.T) {
+		c := TComplexUser{
+			TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+			Name:       "Old", Email: &email, HomeAddr: validAddr, Age: 200,
+		}
+		errs := validator.Validate(&c)
 		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Email: required field" {
-			t.Errorf("unexpected error: %v", errs[0])
+			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
 		}
 	})
 
-	t.Run("nil pointer to optional struct should pass", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Bob Smith",
-			Email:     &email,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			WorkAddr:  nil, // Optional pointer, nil is ok
-			Age:       35,
+	t.Run("multiple_failures", func(t *testing.T) {
+		c := TComplexUser{
+			TBaseModel: TBaseModel{ID: 0, CreatedAt: time.Time{}},
+			Name:       "X", Email: nil, HomeAddr: TAddressWithZip{}, Age: -5,
 		}
-
-		errs := validator.Validate(&complex)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
-
-	t.Run("non-nil pointer to nested struct should pass", func(t *testing.T) {
-		workAddr := Address{Street: "456 Corp Blvd", City: "LA", ZipCode: "90001"}
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Alice Johnson",
-			Email:     &email,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			WorkAddr:  &workAddr,
-			Age:       28,
-		}
-
-		errs := validator.Validate(&complex)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
-
-	t.Run("invalid age in complex struct should fail", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Old Person",
-			Email:     &email,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			Age:       200, // Invalid: > 150
-		}
-
-		errs := validator.Validate(&complex)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Age: value must be <= 150" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-
-	t.Run("multiple validation failures", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 0, CreatedAt: time.Time{}}, // Both invalid
-			Name:      "X",                                      // Too short
-			Email:     nil,                                      // Required but nil
-			HomeAddr:  Address{},                                // All fields invalid
-			Age:       -5,                                       // Invalid: < 0
-		}
-
-		errs := validator.Validate(&complex)
+		errs := validator.Validate(&c)
 		if len(errs) < 5 {
-			t.Errorf("expected at least 5 errors, got %d: %v", len(errs), errs)
+			t.Errorf("expected >= 5 errors, got %d: %v", len(errs), errs)
 		}
 	})
 }
 
 func TestNonSerializableFields(t *testing.T) {
-	validator := godantic.NewValidator[ComplexUser]()
+	validator := godantic.NewValidator[TComplexUser]()
 	email := "test@example.com"
+	validTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	validAddr := TAddressWithZip{Street: "123 Main St", City: "NYC", ZipCode: "10001"}
 
-	t.Run("struct with mutex and channel should validate fine", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Test User",
-			Email:     &email,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			Age:       25,
-			mu:        sync.Mutex{},      // Unexported, should be ignored
-			Ch:        make(chan string), // Should be ignored
-		}
+	c := TComplexUser{
+		TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+		Name:       "Test", Email: &email, HomeAddr: validAddr, Age: 25,
+		mu: sync.Mutex{}, Ch: make(chan string),
+	}
 
-		// Should not panic
-		errs := validator.Validate(&complex)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors with non-serializable fields, got %d: %v", len(errs), errs)
-		}
-	})
+	// Should not panic
+	errs := validator.Validate(&c)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors with non-serializable fields, got %d: %v", len(errs), errs)
+	}
 }
 
 func TestPointerFields(t *testing.T) {
-	validator := godantic.NewValidator[ComplexUser]()
+	validator := godantic.NewValidator[TComplexUser]()
+	email := "test@example.com"
+	validTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	validAddr := TAddressWithZip{Street: "123 Main St", City: "NYC", ZipCode: "10001"}
 
-	t.Run("required pointer field nil should fail", func(t *testing.T) {
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Test",
-			Email:     nil,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			Age:       25,
-		}
-
-		errs := validator.Validate(&complex)
-		hasEmailError := false
+	t.Run("nil_required_fails", func(t *testing.T) {
+		c := TComplexUser{TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime}, Name: "Test", Email: nil, HomeAddr: validAddr, Age: 25}
+		errs := validator.Validate(&c)
+		found := false
 		for _, err := range errs {
 			if err.Error() == "Email: required field" {
-				hasEmailError = true
-				break
+				found = true
 			}
 		}
-		if !hasEmailError {
-			t.Error("expected Email required field error")
+		if !found {
+			t.Error("expected Email required error")
 		}
 	})
 
-	t.Run("required pointer field non-nil should pass", func(t *testing.T) {
-		email := "test@example.com"
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Test",
-			Email:     &email,
-			HomeAddr:  Address{Street: "123 Main St", City: "NYC", ZipCode: "10001"},
-			Age:       25,
-		}
-
-		errs := validator.Validate(&complex)
+	t.Run("non_nil_passes", func(t *testing.T) {
+		c := TComplexUser{TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime}, Name: "Test", Email: &email, HomeAddr: validAddr, Age: 25}
+		errs := validator.Validate(&c)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
 		}
@@ -347,53 +253,36 @@ func TestPointerFields(t *testing.T) {
 }
 
 func TestNestedRequiredFieldErrors(t *testing.T) {
-	// Test that errors for required fields in nested structs show the full path
-	validator := godantic.NewValidator[ComplexUser]()
+	validator := godantic.NewValidator[TComplexUser]()
+	email := "test@example.com"
+	validTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	t.Run("nested struct with empty required fields shows specific path", func(t *testing.T) {
-		email := "test@example.com"
-		complex := ComplexUser{
-			BaseModel: BaseModel{ID: 1, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
-			Name:      "Test",
-			Email:     &email,
-			// HomeAddr has all empty required fields (Street, City, ZipCode)
-			HomeAddr: Address{Street: "", City: "", ZipCode: ""},
-			Age:      25,
-		}
+	c := TComplexUser{
+		TBaseModel: TBaseModel{ID: 1, CreatedAt: validTime},
+		Name:       "Test", Email: &email, HomeAddr: TAddressWithZip{}, Age: 25,
+	}
 
-		errs := validator.Validate(&complex)
-		if len(errs) < 3 {
-			t.Fatalf("Expected at least 3 validation errors for empty Address fields, got %d: %v", len(errs), errs)
-		}
+	errs := validator.Validate(&c)
+	if len(errs) < 3 {
+		t.Fatalf("expected >= 3 errors for empty Address, got %d: %v", len(errs), errs)
+	}
 
-		// Check that errors show the full path: HomeAddr.Street, HomeAddr.City, HomeAddr.ZipCode
-		// NOT just "HomeAddr: required field"
-		foundStreetError := false
-		foundCityError := false
-		foundZipCodeError := false
-
-		for _, err := range errs {
-			if len(err.Loc) == 2 && err.Loc[0] == "HomeAddr" {
-				if err.Loc[1] == "Street" {
-					foundStreetError = true
-				}
-				if err.Loc[1] == "City" {
-					foundCityError = true
-				}
-				if err.Loc[1] == "ZipCode" {
-					foundZipCodeError = true
-				}
+	// Check errors show full path: HomeAddr.Street, etc.
+	var foundStreet, foundCity, foundZip bool
+	for _, err := range errs {
+		if len(err.Loc) == 2 && err.Loc[0] == "HomeAddr" {
+			switch err.Loc[1] {
+			case "Street":
+				foundStreet = true
+			case "City":
+				foundCity = true
+			case "ZipCode":
+				foundZip = true
 			}
 		}
+	}
 
-		if !foundStreetError {
-			t.Errorf("Expected 'HomeAddr.Street: required field' error, got: %v", errs)
-		}
-		if !foundCityError {
-			t.Errorf("Expected 'HomeAddr.City: required field' error, got: %v", errs)
-		}
-		if !foundZipCodeError {
-			t.Errorf("Expected 'HomeAddr.ZipCode: required field' error, got: %v", errs)
-		}
-	})
+	if !foundStreet || !foundCity || !foundZip {
+		t.Errorf("expected HomeAddr.Street/City/ZipCode errors, got: %v", errs)
+	}
 }

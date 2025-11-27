@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/deepankarm/godantic/pkg/internal/partialjson"
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 	"github.com/deepankarm/godantic/pkg/internal/walk"
 )
 
@@ -75,4 +77,127 @@ func walkParse(objPtr reflect.Value, data []byte) ValidationErrors {
 		return ValidationErrors{{Loc: []string{}, Message: err.Error(), Type: ErrorTypeInternal}}
 	}
 	return w.Errors()
+}
+
+// walkParsePartial unmarshals potentially incomplete JSON, applies defaults, and validates.
+// Returns the result with incomplete field paths tracked.
+func walkParsePartial(objPtr reflect.Value, data []byte) (*PartialUnmarshalResult, ValidationErrors) {
+	// First parse to get incomplete paths
+	parser := partialjson.NewParser(false)
+	parseResult, err := parser.Parse(data)
+	if err != nil {
+		return nil, ValidationErrors{{Loc: []string{}, Message: err.Error(), Type: ErrorTypeJSONDecode}}
+	}
+
+	// Use normal processors - we'll filter validation errors after
+	unmarshalProcessor := walk.NewUnmarshalProcessor()
+	defaultsProcessor := walk.NewDefaultsProcessor()
+	validateProcessor := walk.NewValidateProcessor()
+	unionValidateProcessor := walk.NewUnionValidateProcessor()
+
+	w := walk.NewWalker(cachedScanner,
+		unmarshalProcessor,
+		defaultsProcessor,
+		validateProcessor,
+		unionValidateProcessor,
+	)
+
+	// Walk with repaired JSON
+	if err := w.Walk(objPtr.Elem(), parseResult.Repaired); err != nil {
+		return nil, ValidationErrors{{Loc: []string{}, Message: err.Error(), Type: ErrorTypeInternal}}
+	}
+
+	// Filter out validation errors for incomplete fields using actual JSON tags
+	typ := objPtr.Elem().Type()
+	validationErrors := filterIncompleteFieldErrors(validateProcessor.GetErrors(), parseResult.Incomplete, typ)
+
+	return &PartialUnmarshalResult{
+		Value:           objPtr.Elem(),
+		IncompletePaths: parseResult.Incomplete,
+		TruncatedAt:     parseResult.TruncatedAt,
+		Errors:          unmarshalProcessor.GetErrors(),
+	}, validationErrors
+}
+
+// filterIncompleteFieldErrors removes validation errors for fields that are incomplete.
+// Uses the struct type to properly map Go field names to JSON field names.
+func filterIncompleteFieldErrors(errs []walk.ValidationError, incompletePaths [][]string, typ reflect.Type) ValidationErrors {
+	if len(incompletePaths) == 0 {
+		// Fast path: nothing incomplete, keep all errors
+		result := make(ValidationErrors, len(errs))
+		for i, e := range errs {
+			result[i] = ValidationError{Loc: e.Loc, Message: e.Message, Type: ErrorType(e.Type)}
+		}
+		return result
+	}
+
+	// Build set of incomplete JSON paths using partialjson utility
+	incompleteSet := partialjson.BuildIncompleteSet(incompletePaths)
+
+	var filtered ValidationErrors
+	for _, e := range errs {
+		// Convert struct path to JSON path using actual JSON tags
+		jsonPath := structPathToJSONPath(e.Loc, typ)
+		if !partialjson.IsPathOrParentIncomplete(jsonPath, incompleteSet) {
+			filtered = append(filtered, ValidationError{
+				Loc:     e.Loc,
+				Message: e.Message,
+				Type:    ErrorType(e.Type),
+			})
+		}
+	}
+	return filtered
+}
+
+// structPathToJSONPath converts struct field path to JSON path using actual JSON tags.
+// Uses reflectutil.GoFieldToJSONName for proper tag lookup.
+func structPathToJSONPath(structPath []string, typ reflect.Type) string {
+	if len(structPath) == 0 {
+		return ""
+	}
+
+	// Unwrap pointer types
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+
+	var result string
+	currentType := typ
+
+	for i, fieldName := range structPath {
+		// Handle array indices
+		if len(fieldName) > 0 && fieldName[0] == '[' {
+			if result != "" {
+				result += fieldName
+			} else {
+				result = fieldName
+			}
+			// For array elements, try to get element type
+			if currentType.Kind() == reflect.Slice || currentType.Kind() == reflect.Array {
+				currentType = currentType.Elem()
+			}
+			continue
+		}
+
+		// Get JSON name from struct tag
+		jsonName := reflectutil.GoFieldToJSONName(currentType, fieldName)
+
+		if i == 0 {
+			result = jsonName
+		} else {
+			result += "." + jsonName
+		}
+
+		// Update current type for nested fields
+		if currentType.Kind() == reflect.Struct {
+			if field, ok := currentType.FieldByName(fieldName); ok {
+				currentType = field.Type
+				if currentType.Kind() == reflect.Pointer {
+					currentType = currentType.Elem()
+				}
+			}
+		}
+	}
+
+	return result
 }

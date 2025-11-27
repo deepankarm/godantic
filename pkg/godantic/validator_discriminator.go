@@ -32,7 +32,7 @@ func (v *Validator[T]) validateDiscriminatedUnion(data []byte, cfg *discriminato
 
 // unmarshalDiscriminatedUnion handles unmarshaling (struct → JSON) for discriminated unions
 func (v *Validator[T]) unmarshalDiscriminatedUnion(obj *T, cfg *discriminatorConfig) ([]byte, ValidationErrors) {
-	instance, errs := newUnionFromStruct[T](obj, cfg)
+	instance, errs := newUnionFromStruct(obj, cfg)
 	if errs != nil {
 		return nil, errs
 	}
