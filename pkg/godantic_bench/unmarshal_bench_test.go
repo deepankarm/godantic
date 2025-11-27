@@ -49,7 +49,7 @@ func BenchmarkUnmarshal_Simple(b *testing.B) {
 
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Marshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -64,7 +64,7 @@ func BenchmarkUnmarshal_WithDefaults(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Marshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -97,7 +97,7 @@ func BenchmarkUnmarshal_Medium(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Marshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -113,7 +113,7 @@ func BenchmarkUnmarshal_Godantic(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Marshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -127,7 +127,7 @@ func BenchmarkUnmarshal_StdJSON(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		var product Product
 		if err := json.Unmarshal(data, &product); err != nil {
 			b.Fatalf("unmarshal failed: %v", err)
@@ -152,7 +152,7 @@ func BenchmarkMarshal_Simple(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Unmarshal(&product)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -172,7 +172,7 @@ func BenchmarkMarshal_WithDefaults(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Unmarshal(&product)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -205,7 +205,7 @@ func BenchmarkMarshal_Medium(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, err := validator.Unmarshal(&user)
 		if err != nil {
 			b.Fatalf("unmarshal failed: %v", err)
@@ -227,7 +227,7 @@ func BenchmarkMarshal_Godantic(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, errs := validator.Unmarshal(&product)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
@@ -247,7 +247,7 @@ func BenchmarkMarshal_StdJSON(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		_, err := json.Marshal(&product)
 		if err != nil {
 			b.Fatalf("marshal failed: %v", err)
@@ -271,7 +271,7 @@ func BenchmarkApplyDefaults_Simple(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for b.Loop() {
+	for i := 0; i < b.N; i++ {
 		err := validator.ApplyDefaults(&product)
 		if err != nil {
 			b.Fatalf("apply defaults failed: %v", err)
