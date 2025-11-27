@@ -255,3 +255,35 @@ func (v *Validator[T]) FieldOptions() map[string]any {
 	}
 	return result
 }
+
+// MarshalPartial parses potentially incomplete JSON into a struct.
+// Returns the partially populated struct, its completion state, and any errors.
+//
+// Unlike Marshal(), this method:
+// - Does NOT fail on incomplete JSON
+// - Tracks which fields are incomplete
+// - Skips validation for incomplete fields
+//
+// Example (LLM streaming):
+//
+//	validator := godantic.NewValidator[ToolCall]()
+//	result, state, errs := validator.MarshalPartial([]byte(`{"type": "sear`))
+//	if state.IsComplete {
+//	    // Full JSON received - use result
+//	}
+func (v *Validator[T]) MarshalPartial(data []byte) (*T, *PartialState, ValidationErrors) {
+	if v.config.discriminator != nil {
+		return v.marshalPartialDiscriminatedUnion(data, v.config.discriminator)
+	}
+
+	// Parse and repair the incomplete JSON first
+	parseResult, parseErrs := parsePartialJSON(data)
+	if parseErrs != nil {
+		return nil, &PartialState{IsComplete: false}, parseErrs
+	}
+
+	var obj T
+	objPtr := reflect.New(reflect.TypeOf(obj))
+
+	return marshalPartialCommon[T](objPtr, parseResult)
+}

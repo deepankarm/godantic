@@ -64,3 +64,12 @@ func (es ValidationErrors) Unwrap() []error {
 	}
 	return errs
 }
+
+func (es ValidationErrors) HasJSONDecodeError() bool {
+	for _, e := range es {
+		if e.Type == ErrorTypeJSONDecode {
+			return true
+		}
+	}
+	return false
+}

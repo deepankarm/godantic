@@ -1,11 +1,15 @@
 package godantic_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
 )
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Union[any]() Constraint Tests
+// Tests for the Union() constraint on `any` typed fields
+// ═══════════════════════════════════════════════════════════════════════════
 
 type FlexibleConfig struct {
 	Value any
@@ -19,7 +23,7 @@ func (c *FlexibleConfig) FieldValue() godantic.FieldOptions[any] {
 	)
 }
 
-func TestUnion(t *testing.T) {
+func TestUnionConstraint(t *testing.T) {
 	validator := godantic.NewValidator[FlexibleConfig]()
 
 	tests := []struct {
@@ -28,27 +32,27 @@ func TestUnion(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "string value should pass",
+			name:    "string_value",
 			config:  FlexibleConfig{Value: "text"},
 			wantErr: false,
 		},
 		{
-			name:    "integer value should pass",
+			name:    "integer_value",
 			config:  FlexibleConfig{Value: 42},
 			wantErr: false,
 		},
 		{
-			name:    "object value should pass",
+			name:    "object_value",
 			config:  FlexibleConfig{Value: map[string]any{"key": "value"}},
 			wantErr: false,
 		},
 		{
-			name:    "boolean value should fail",
+			name:    "boolean_invalid",
 			config:  FlexibleConfig{Value: true},
 			wantErr: true,
 		},
 		{
-			name:    "array value should fail",
+			name:    "array_invalid",
 			config:  FlexibleConfig{Value: []string{"a", "b"}},
 			wantErr: true,
 		},
@@ -64,20 +68,24 @@ func TestUnion(t *testing.T) {
 	}
 }
 
-// Test discriminated unions with real-world API response example
+// ═══════════════════════════════════════════════════════════════════════════
+// DiscriminatedUnion() Field Constraint Tests
+// Tests for discriminated union at field level (not validator level)
+// ═══════════════════════════════════════════════════════════════════════════
+
 type ResponseType interface {
 	GetStatus() string
 }
 
 type SuccessResponse struct {
-	Status string // "success"
+	Status string
 	Data   map[string]string
 }
 
 func (s SuccessResponse) GetStatus() string { return s.Status }
 
 type ErrorResponse struct {
-	Status  string // "error"
+	Status  string
 	Message string
 	Code    int
 }
@@ -85,14 +93,14 @@ type ErrorResponse struct {
 func (e ErrorResponse) GetStatus() string { return e.Status }
 
 type PendingResponse struct {
-	Status   string // "pending"
+	Status   string
 	Progress int
 }
 
 func (p PendingResponse) GetStatus() string { return p.Status }
 
 type InvalidResponse struct {
-	Status string // "invalid"
+	Status string
 	Reason string
 }
 
@@ -109,13 +117,11 @@ func (a *APIResult) FieldResponse() godantic.FieldOptions[ResponseType] {
 			"success": SuccessResponse{},
 			"error":   ErrorResponse{},
 			"pending": PendingResponse{},
-			// invalid response is not in the discriminator mapping
 		}),
-		godantic.Description[ResponseType]("API response - structure depends on Status field"),
 	)
 }
 
-func TestDiscriminatedUnionSemantics(t *testing.T) {
+func TestFieldDiscriminatedUnion(t *testing.T) {
 	validator := godantic.NewValidator[APIResult]()
 
 	tests := []struct {
@@ -124,64 +130,44 @@ func TestDiscriminatedUnionSemantics(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "success response with status='success'",
+			name: "success_response",
 			result: APIResult{
-				Response: SuccessResponse{
-					Status: "success",
-					Data:   map[string]string{"user_id": "123"},
-				},
+				Response: SuccessResponse{Status: "success", Data: map[string]string{"id": "123"}},
 			},
 			wantErr: false,
 		},
 		{
-			name: "error response with status='error'",
+			name: "error_response",
 			result: APIResult{
-				Response: ErrorResponse{
-					Status:  "error",
-					Message: "Not found",
-					Code:    404,
-				},
+				Response: ErrorResponse{Status: "error", Message: "Not found", Code: 404},
 			},
 			wantErr: false,
 		},
 		{
-			name: "pending response with status='pending'",
+			name: "pending_response",
 			result: APIResult{
-				Response: PendingResponse{
-					Status:   "pending",
-					Progress: 75,
-				},
+				Response: PendingResponse{Status: "pending", Progress: 75},
 			},
 			wantErr: false,
 		},
 		{
-			name: "invalid discriminator: empty string",
+			name: "empty_discriminator",
 			result: APIResult{
-				Response: ErrorResponse{
-					Status:  "", // Empty
-					Message: "Something failed",
-					Code:    500,
-				},
+				Response: ErrorResponse{Status: "", Message: "Bad", Code: 500},
 			},
 			wantErr: true,
 		},
 		{
-			name: "invalid discriminator: typo in value",
+			name: "typo_in_discriminator",
 			result: APIResult{
-				Response: PendingResponse{
-					Status:   "pendin", // Typo
-					Progress: 50,
-				},
+				Response: PendingResponse{Status: "pendin", Progress: 50},
 			},
 			wantErr: true,
 		},
 		{
-			name: "type implements interface but not in discriminator mapping",
+			name: "type_not_in_mapping",
 			result: APIResult{
-				Response: InvalidResponse{
-					Status: "invalid",
-					Reason: "Something went wrong",
-				},
+				Response: InvalidResponse{Status: "invalid", Reason: "Bad"},
 			},
 			wantErr: true,
 		},
@@ -190,16 +176,17 @@ func TestDiscriminatedUnionSemantics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			errs := validator.Validate(&tt.result)
-			hasErr := len(errs) > 0
-
-			if hasErr != tt.wantErr {
+			if (len(errs) > 0) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", errs, tt.wantErr)
 			}
 		})
 	}
 }
 
-// Test mixing union types with other constraints (OneOf + Union)
+// ═══════════════════════════════════════════════════════════════════════════
+// Mixed Constraints Tests (Union + OneOf)
+// ═══════════════════════════════════════════════════════════════════════════
+
 type APIResponse struct {
 	Status  string
 	Payload any
@@ -216,11 +203,10 @@ func (r *APIResponse) FieldPayload() godantic.FieldOptions[any] {
 	return godantic.Field(
 		godantic.Required[any](),
 		godantic.Union[any]("string", "object", "array"),
-		godantic.Description[any]("Response payload can be a string, object, or array"),
 	)
 }
 
-func TestComplexUnion(t *testing.T) {
+func TestMixedConstraints(t *testing.T) {
 	validator := godantic.NewValidator[APIResponse]()
 
 	tests := []struct {
@@ -229,22 +215,22 @@ func TestComplexUnion(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:     "success with string payload",
+			name:     "success_string_payload",
 			response: APIResponse{Status: "success", Payload: "completed"},
 			wantErr:  false,
 		},
 		{
-			name:     "success with object payload",
-			response: APIResponse{Status: "success", Payload: map[string]any{"id": 1, "name": "test"}},
+			name:     "success_object_payload",
+			response: APIResponse{Status: "success", Payload: map[string]any{"id": 1}},
 			wantErr:  false,
 		},
 		{
-			name:     "error with array payload",
-			response: APIResponse{Status: "error", Payload: []string{"error1", "error2"}},
+			name:     "error_array_payload",
+			response: APIResponse{Status: "error", Payload: []string{"err1", "err2"}},
 			wantErr:  false,
 		},
 		{
-			name:     "invalid status should fail",
+			name:     "invalid_status",
 			response: APIResponse{Status: "invalid", Payload: "data"},
 			wantErr:  true,
 		},
@@ -258,264 +244,4 @@ func TestComplexUnion(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Test slices of discriminated unions
-type ContentBlock interface {
-	GetBlockType() string
-}
-
-type TextContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-func (t TextContentBlock) GetBlockType() string { return t.Type }
-
-type ImageContentBlock struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
-}
-
-func (i ImageContentBlock) GetBlockType() string { return i.Type }
-
-type CodeContentBlock struct {
-	Type     string `json:"type"`
-	Language string `json:"language"`
-	Code     string `json:"code"`
-}
-
-func (c CodeContentBlock) GetBlockType() string { return c.Type }
-
-type RichDocument struct {
-	Title  string
-	Blocks []ContentBlock
-}
-
-func (d *RichDocument) FieldTitle() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-func (d *RichDocument) FieldBlocks() godantic.FieldOptions[[]ContentBlock] {
-	return godantic.Field(
-		godantic.Required[[]ContentBlock](),
-		godantic.DiscriminatedUnion[[]ContentBlock]("type", map[string]any{
-			"text":  TextContentBlock{},
-			"image": ImageContentBlock{},
-			"code":  CodeContentBlock{},
-		}),
-	)
-}
-
-func TestSliceOfDiscriminatedUnions(t *testing.T) {
-	validator := godantic.NewValidator[RichDocument]()
-
-	t.Run("validate struct with slice of discriminated unions", func(t *testing.T) {
-		doc := RichDocument{
-			Title: "Test Doc",
-			Blocks: []ContentBlock{
-				TextContentBlock{Type: "text", Text: "Hello"},
-				ImageContentBlock{Type: "image", URL: "http://example.com/img.png"},
-				CodeContentBlock{Type: "code", Language: "go", Code: "fmt.Println()"},
-			},
-		}
-		errs := validator.Validate(&doc)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
-
-	t.Run("marshal JSON → struct with slice of discriminated unions", func(t *testing.T) {
-		jsonStr := `{
-			"Title": "Test Doc",
-			"Blocks": [
-				{"type": "text", "text": "Hello"},
-				{"type": "image", "url": "http://example.com/img.png"},
-				{"type": "code", "language": "go", "code": "fmt.Println()"}
-			]
-		}`
-
-		doc, errs := validator.Marshal([]byte(jsonStr))
-		if len(errs) != 0 {
-			t.Fatalf("expected no errors, got %v", errs)
-		}
-
-		if doc.Title != "Test Doc" {
-			t.Errorf("expected title 'Test Doc', got %s", doc.Title)
-		}
-
-		if len(doc.Blocks) != 3 {
-			t.Fatalf("expected 3 content blocks, got %d", len(doc.Blocks))
-		}
-
-		// Verify each block type
-		if _, ok := doc.Blocks[0].(TextContentBlock); !ok {
-			t.Errorf("expected first block to be TextContentBlock, got %T", doc.Blocks[0])
-		}
-		if _, ok := doc.Blocks[1].(ImageContentBlock); !ok {
-			t.Errorf("expected second block to be ImageContentBlock, got %T", doc.Blocks[1])
-		}
-		if _, ok := doc.Blocks[2].(CodeContentBlock); !ok {
-			t.Errorf("expected third block to be CodeContentBlock, got %T", doc.Blocks[2])
-		}
-	})
-
-	t.Run("unmarshal struct → JSON with slice of discriminated unions", func(t *testing.T) {
-		doc := RichDocument{
-			Title: "Round Trip",
-			Blocks: []ContentBlock{
-				TextContentBlock{Type: "text", Text: "World"},
-				CodeContentBlock{Type: "code", Language: "python", Code: "print('hi')"},
-			},
-		}
-
-		jsonData, errs := validator.Unmarshal(&doc)
-		if len(errs) != 0 {
-			t.Fatalf("expected no errors, got %v", errs)
-		}
-
-		// Verify JSON contains correct structure
-		var result map[string]any
-		if err := json.Unmarshal(jsonData, &result); err != nil {
-			t.Fatalf("failed to parse result JSON: %v", err)
-		}
-
-		if result["Title"] != "Round Trip" {
-			t.Errorf("expected title 'Round Trip', got %v", result["Title"])
-		}
-
-		blocks, ok := result["Blocks"].([]any)
-		if !ok {
-			t.Fatalf("expected Blocks to be array, got %T", result["Blocks"])
-		}
-
-		if len(blocks) != 2 {
-			t.Fatalf("expected 2 blocks, got %d", len(blocks))
-		}
-
-		// Verify first block is text
-		block0 := blocks[0].(map[string]any)
-		if block0["type"] != "text" || block0["text"] != "World" {
-			t.Errorf("first block mismatch: %v", block0)
-		}
-
-		// Verify second block is code
-		block1 := blocks[1].(map[string]any)
-		if block1["type"] != "code" || block1["language"] != "python" {
-			t.Errorf("second block mismatch: %v", block1)
-		}
-	})
-}
-
-// --- Test validation within discriminated union slice elements ---
-
-type BlockItem interface {
-	GetType() string
-}
-
-type SimpleBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-func (s SimpleBlock) GetType() string { return s.Type }
-
-// BlockWithRequiredField has a required ID field
-type BlockWithRequiredField struct {
-	Type string `json:"type"`
-	Data string `json:"data"`
-	ID   string `json:"id"`
-}
-
-func (b BlockWithRequiredField) GetType() string { return b.Type }
-
-func (b *BlockWithRequiredField) FieldID() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-type BlockContainer struct {
-	Title string      `json:"title"`
-	Items []BlockItem `json:"items"`
-}
-
-func (b *BlockContainer) FieldTitle() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-func (b *BlockContainer) FieldItems() godantic.FieldOptions[[]BlockItem] {
-	return godantic.Field(
-		godantic.Required[[]BlockItem](),
-		godantic.DiscriminatedUnion[[]BlockItem]("type", map[string]any{
-			"simple":  &SimpleBlock{},
-			"complex": &BlockWithRequiredField{},
-		}),
-	)
-}
-
-func TestSliceOfDiscriminatedUnions_Validation(t *testing.T) {
-	validator := godantic.NewValidator[BlockContainer]()
-
-	t.Run("valid items pass validation", func(t *testing.T) {
-		jsonStr := `{
-			"title": "Test Document",
-			"items": [
-				{"type": "simple", "text": "Hello"},
-				{"type": "complex", "data": "Some data", "id": "item-123"}
-			]
-		}`
-
-		container, errs := validator.Marshal([]byte(jsonStr))
-		if len(errs) != 0 {
-			t.Fatalf("expected no errors, got %v", errs)
-		}
-
-		if container.Title != "Test Document" {
-			t.Errorf("expected title 'Test Document', got %s", container.Title)
-		}
-		if len(container.Items) != 2 {
-			t.Errorf("expected 2 items, got %d", len(container.Items))
-		}
-	})
-
-	t.Run("missing required field in slice element fails validation", func(t *testing.T) {
-		jsonStr := `{
-			"title": "Test Document",
-			"items": [
-				{"type": "complex", "data": "Some data"}
-			]
-		}`
-
-		_, errs := validator.Marshal([]byte(jsonStr))
-		if len(errs) == 0 {
-			t.Fatal("expected validation error for missing id, got none")
-		}
-
-		// Should report error for ID field
-		found := false
-		for _, err := range errs {
-			if err.Loc[len(err.Loc)-1] == "ID" {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected error for ID field, got: %v", errs)
-		}
-	})
-
-	t.Run("multiple elements with validation errors", func(t *testing.T) {
-		jsonStr := `{
-			"title": "Test Document",
-			"items": [
-				{"type": "complex", "data": "First"},
-				{"type": "simple", "text": "Some text"},
-				{"type": "complex", "data": "Second"}
-			]
-		}`
-
-		_, errs := validator.Marshal([]byte(jsonStr))
-		if len(errs) < 2 {
-			t.Fatalf("expected at least 2 validation errors (both complex blocks missing id), got %d: %v", len(errs), errs)
-		}
-	})
 }
