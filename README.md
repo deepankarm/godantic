@@ -2,9 +2,9 @@
 
 [![Tests](https://github.com/deepankarm/godantic/workflows/Tests/badge.svg)](https://github.com/deepankarm/godantic/actions/workflows/test.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/deepankarm/godantic.svg)](https://pkg.go.dev/github.com/deepankarm/godantic) [![Go Report Card](https://goreportcard.com/badge/github.com/deepankarm/godantic)](https://goreportcard.com/report/github.com/deepankarm/godantic) [![Go Version](https://img.shields.io/github/go-mod/go-version/deepankarm/godantic)](go.mod)
 
-**FastAPI-style automatic OpenAPI generation and validation for Go.** Define your types once with validation rules, get runtime validation, JSON schemas, and complete OpenAPI specs—without struct tags.
+**Validation, JSON Schema, and OpenAPI generation for Go.** Define your types once with validation rules, get runtime validation, JSON schemas, and complete OpenAPI specs—without struct tags. Full support for Union types with discriminators.
 
-Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). Works with OpenAI/Anthropic/Gemini structured output APIs, Gin REST APIs, and any system that needs JSON Schema or OpenAPI 3.0.3 specs.
+Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). Works with LLM structured output APIs (OpenAI/Anthropic/Gemini), Gin REST APIs, and any system that needs JSON Schema or OpenAPI 3.0.3 specs.
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
@@ -20,8 +20,9 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 
 - **Single source of truth**: Define validation rules once in Go code, get runtime validation + JSON Schema + OpenAPI specs
 - **No struct tags**: Uses `Field{Name}()` methods instead of tag syntax—works with your IDE, tests, and debugger
-- **Union type support**: Generates `anyOf`/`oneOf` schemas with discriminators for LLM structured outputs and OpenAPI 3.1
-- **Gin integration**: FastAPI-style automatic OpenAPI generation and interactive docs (`/docs`, `/redoc`)
+- **Union type support**: Full `anyOf`/`oneOf` schemas with discriminators for LLM structured outputs and OpenAPI 3.1
+- **LLM-ready**: Works seamlessly with OpenAI, Anthropic, and Gemini structured output APIs
+- **Gin integration**: Automatic OpenAPI generation and interactive docs (`/docs`, `/redoc`)
 - **Type-safe**: Leverages Go generics for compile-time safety
 
 ```bash
