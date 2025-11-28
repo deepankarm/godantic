@@ -1,6 +1,7 @@
 # Godantic
 
-[![Tests](https://github.com/deepankarm/godantic/workflows/Tests/badge.svg)](https://github.com/deepankarm/godantic/actions/workflows/test.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/deepankarm/godantic.svg)](https://pkg.go.dev/github.com/deepankarm/godantic) [![Go Report Card](https://goreportcard.com/badge/github.com/deepankarm/godantic)](https://goreportcard.com/report/github.com/deepankarm/godantic) [![Go Version](https://img.shields.io/github/go-mod/go-version/deepankarm/godantic)](go.mod)
+[![Tests](https://github.com/deepankarm/godantic/workflows/Tests/badge.svg)](https://github.com/deepankarm/godantic/actions/workflows/test.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/deepankarm/godantic.svg)](https://pkg.go.dev/github.com/deepankarm/godantic) [![Go Report Card](https://goreportcard.com/badge/github.com/deepankarm/godantic)](https://goreportcard.com/report/github.com/deepankarm/godantic) [![Go Version](https://img.shields.io/github/go-mod/go-version/deepankarm/godantic)](go.mod) [![codecov](https://codecov.io/gh/deepankarm/godantic/branch/main/graph/badge.svg)](https://codecov.io/gh/deepankarm/godantic)
+
 
 **Validation, JSON Schema, and OpenAPI generation for Go.** Define your types once with validation rules, get runtime validation, JSON schemas, and complete OpenAPI specs—without struct tags. Full support for Union types with discriminators.
 
@@ -654,6 +655,8 @@ Zero values (empty string, 0, nil) are treated as "not set" for required field c
 go test ./... -v -cover
 ```
 
+---
+
 ## Examples
 
 Check out [`examples/`](./examples/) for complete working examples:
@@ -663,7 +666,3 @@ Check out [`examples/`](./examples/) for complete working examples:
 - **[`gin-api/`](./examples/gin-api/)** - Complete Gin REST API with automatic OpenAPI generation and Swagger UI
 - **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions  
 - **[`llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/)** - Streaming partial JSON during long-running generation using Gemini
-
----
-
-> Disclaimer: Some of the code and most of the tests & docs are written by Cursor.
