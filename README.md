@@ -2,10 +2,7 @@
 
 [![Tests](https://github.com/deepankarm/godantic/workflows/Tests/badge.svg)](https://github.com/deepankarm/godantic/actions/workflows/test.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/deepankarm/godantic.svg)](https://pkg.go.dev/github.com/deepankarm/godantic) [![Go Report Card](https://goreportcard.com/badge/github.com/deepankarm/godantic)](https://goreportcard.com/report/github.com/deepankarm/godantic) [![Go Version](https://img.shields.io/github/go-mod/go-version/deepankarm/godantic)](go.mod) [![codecov](https://codecov.io/gh/deepankarm/godantic/branch/main/graph/badge.svg)](https://codecov.io/gh/deepankarm/godantic)
 
-
-**Validation, JSON Schema, and OpenAPI generation for Go.** Define your types once with validation rules, get runtime validation, JSON schemas, and complete OpenAPI specs—without struct tags. Full support for Union types with discriminators.
-
-Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). Works with LLM structured output APIs (OpenAI/Anthropic/Gemini), Gin REST APIs, and any system that needs JSON Schema or OpenAPI 3.0.3 specs.
+**Pydantic for Go - JSON schema generation, LLM response validation, partial JSON streaming.** Catch hallucinated types before they crash your app. Works with OpenAI, Anthropic, Gemini, Gin REST APIs (with OpenAPI generation), and any system that consumes JSON Schema. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). 
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
@@ -19,16 +16,104 @@ func (u *User) FieldEmail() godantic.FieldOptions[string] {
 
 **Key Features:**
 
-- **Single source of truth**: Define validation rules once in Go code, get runtime validation + JSON Schema + OpenAPI specs
-- **No struct tags**: Uses `Field{Name}()` methods instead of tag syntax—works with your IDE, tests, and debugger
-- **Union type support**: Full `anyOf`/`oneOf` schemas with discriminators for LLM structured outputs and OpenAPI 3.1
-- **LLM-ready**: Works seamlessly with OpenAI, Anthropic, and Gemini structured output APIs
-- **Gin integration**: Automatic OpenAPI generation and interactive docs (`/docs`, `/redoc`)
-- **Type-safe**: Leverages Go generics for compile-time safety
+- **LLM-ready schemas**: Generate flattened JSON Schema for OpenAI, Anthropic, Gemini structured outputs
+- **Streaming partial JSON**: Parse incomplete JSON as it streams from LLM APIs for real-time UI updates
+- **Runtime validation**: Catch hallucinated types, missing fields, and invalid enums before they crash your app
+- **Union type support**: Full `anyOf`/`oneOf` schemas with discriminators
+- **No struct tags**: Uses `Field{Name}()` methods—works with your IDE, tests, and debugger
+- **Gin integration**: Automatic OpenAPI generation and interactive docs
 
 ```bash
 go get github.com/deepankarm/godantic
 ```
+
+## LLM Structured Output
+
+Godantic solves a common problem: LLMs sometimes return invalid data (wrong types, missing fields, out-of-range values). Define your schema once, use it to guide LLM responses AND validate them.
+
+### Basic Workflow
+
+```go
+import (
+    "github.com/deepankarm/godantic"
+    "github.com/deepankarm/godantic/schema"
+)
+
+// 1. Define your response structure
+type TaskList struct {
+    Tasks []Task
+}
+
+type Task struct {
+    Title    string
+    Priority string
+    Done     bool
+}
+
+func (t *TaskList) FieldTasks() godantic.FieldOptions[[]Task] {
+    return godantic.Field(
+        godantic.Required[[]Task](),
+        godantic.MinItems[Task](1),
+    )
+}
+
+func (t *Task) FieldPriority() godantic.FieldOptions[string] {
+    return godantic.Field(
+        godantic.OneOf("low", "medium", "high"),
+    )
+}
+
+// 2. Generate flattened schema for LLM APIs
+schemaGen := schema.NewGenerator[TaskList]()
+flatSchema, _ := schemaGen.GenerateFlattened()
+
+// 3. Send schema to your LLM provider (OpenAI, Gemini, Claude)
+response := callLLM(prompt, flatSchema)
+
+// 4. Validate response before using it
+validator := godantic.NewValidator[TaskList]()
+result, errs := validator.Marshal(response)
+if len(errs) > 0 {
+    // LLM returned invalid data - handle or retry
+}
+```
+
+### Streaming Partial JSON
+
+Parse incomplete JSON as it streams from LLM APIs. Essential for real-time UI updates during long-running generation.
+
+```go
+// Create streaming parser
+parser := godantic.NewStreamParser[Response]()
+
+// Feed chunks as they arrive from LLM API
+for chunk := range llmStream {
+    result, state, _ := parser.Feed(chunk)
+    
+    if state.IsComplete {
+        // Full response received and validated
+        fmt.Println("Complete:", result)
+    } else {
+        // Show partial data in real-time
+        // state.WaitingFor() tells you which fields are still incomplete
+        fmt.Printf("Streaming... waiting for: %v\n", state.WaitingFor())
+    }
+}
+```
+
+**How it works:**
+- Repairs incomplete JSON (closes unclosed strings, arrays, objects)
+- Tracks which fields are still being streamed via `state.WaitingFor()`
+- Skips validation for incomplete fields
+- Applies defaults automatically
+
+See [`examples/llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/) for a complete working example with Gemini streaming.
+
+### Provider Examples
+
+See complete working examples:
+- [`examples/openai-structured-output/`](./examples/openai-structured-output/) - OpenAI structured output API
+- [`examples/gemini-structured-output/`](./examples/gemini-structured-output/) - Google Gemini with enums and unions
 
 ## Quick Start
 
@@ -116,7 +201,7 @@ func (u *User) FieldPassword() godantic.FieldOptions[string] {
 
 ### Union Types
 
-Go doesn't have native union types, and that's by design. However, when building systems that interact with external APIs, LLMs, or generate OpenAPI schemas, you often need to express "this field can be one of several types" in JSON Schema.
+By design, Go doesn't have native union types. However, when building systems that interact with external APIs, LLMs, or generate OpenAPI schemas, you often need to express "this field can be one of several types" in JSON Schema.
 
 Godantic provides **runtime validation and JSON Schema generation** for union-like patterns using Go's existing type system (`any` and interfaces).
 
@@ -306,17 +391,6 @@ jsonSchema, err := sg.GenerateJSON()
 
 All validation constraints (min, max, pattern, etc.) are automatically included in the schema.
 
-**For LLM APIs (OpenAI, Gemini, Claude):**
-
-LLM providers require a "flattened" schema format where the root object definition is at the top level instead of behind a `$ref`:
-
-```go
-// Generate flattened schema for LLM APIs
-flatSchema, err := sg.GenerateFlattened()
-```
-
-This promotes the root object to the top level while preserving `$defs` for nested types, making it compatible with structured output APIs.
-
 ### JSON Marshal/Unmarshal with Validation
 
 Godantic provides convenient methods for working with JSON that automatically apply defaults and validate:
@@ -425,89 +499,9 @@ type Company struct {
 }
 ```
 
-## LLM Structured Output
-
-**Godantic is an excellent companion for LLM structured outputs.** Use it to:
-1. **Generate JSON Schema** from your Go types (with all constraints and union types)
-2. **Send it to LLM APIs** (OpenAI, Gemini, Claude) to guide response structure
-3. **Validate the LLM response** to ensure it matches your schema and constraints
-
-**Complete workflow:**
-
-```go
-import (
-    "github.com/deepankarm/godantic/"
-    "github.com/deepankarm/godantic/schema"
-)
-
-// 1. Define your response structure
-type TaskList struct {
-    Tasks []Task
-}
-
-func (t *TaskList) FieldTasks() godantic.FieldOptions[[]Task] {
-    return godantic.Field(
-        godantic.Required[[]Task](),
-        godantic.MinItems[Task](1),
-    )
-}
-
-// 2. Generate flattened schema for LLM
-schemaGen := schema.NewGenerator[TaskList]()
-flatSchema, _ := schemaGen.GenerateFlattened()
-
-// 3. Send to LLM API (OpenAI, Gemini, Claude)
-response := callLLM(prompt, flatSchema)
-
-// 4. Validate LLM response
-validator := godantic.NewValidator[TaskList]()
-var result TaskList
-json.Unmarshal(response, &result)
-if errs := validator.Validate(&result); len(errs) > 0 {
-    // Handle validation errors
-}
-```
-
-**Why this matters:**
-- LLMs sometimes return invalid data (missing fields, wrong types, out-of-range values)
-- Godantic catches these issues before they reach your business logic
-- Same schema definition for both generation and validation (single source of truth)
-
-See [`examples/openai-structured-output/`](./examples/openai-structured-output/) and [`examples/gemini-structured-output/`](./examples/gemini-structured-output/) for complete working examples.
-
-### Streaming Partial JSON
-
-Parse incomplete JSON as it streams from LLM APIs. Essential for real-time UI updates during long-running generation.
-
-```go
-// Create streaming parser
-parser := godantic.NewStreamParser[Response]()
-
-// Feed chunks as they arrive from LLM API
-for chunk := range llmStream {
-    result, state, _ := parser.Feed(chunk)
-    
-    if state.IsComplete {
-        // Full response received and validated
-        fmt.Println("Complete:", result)
-    } else {
-        // Show partial data in real-time
-        fmt.Printf("Streaming... waiting for: %v\n", state.WaitingFor())
-    }
-}
-```
-
-**Features:**
-- Repairs incomplete JSON (closes unclosed strings, arrays, objects)
-- Tracks incomplete fields via `state.WaitingFor()`
-- Skips validation for incomplete fields
-- Applies defaults automatically
-
-See [`examples/llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/) for a complete working example with Gemini streaming.
-
 ## Gin Integration (gingodantic)
 
-Automatic OpenAPI spec generation and validation for Gin APIs. Define your request/response types once, get runtime validation, OpenAPI specs, and interactive documentation.
+**FastAPI experience with Gin.** Automatic OpenAPI generation, request validation, and interactive docs—define your types once, get everything else for free.
 
 ```go
 import "github.com/deepankarm/godantic/pkg/gingodantic"
@@ -518,17 +512,11 @@ type CreateUserRequest struct {
 }
 
 func (c *CreateUserRequest) FieldName() godantic.FieldOptions[string] {
-    return godantic.Field(
-        godantic.Required[string](),
-        godantic.MinLen(2),
-    )
+    return godantic.Field(godantic.Required[string](), godantic.MinLen(2))
 }
 
 func (c *CreateUserRequest) FieldEmail() godantic.FieldOptions[string] {
-    return godantic.Field(
-        godantic.Required[string](),
-        godantic.Email(),
-    )
+    return godantic.Field(godantic.Required[string](), godantic.Email())
 }
 
 // Setup
@@ -648,7 +636,6 @@ godantic.Validate(func(val T) error {
 
 Zero values (empty string, 0, nil) are treated as "not set" for required field checks.
 
-
 ## Testing
 
 ```bash
@@ -663,6 +650,7 @@ Check out [`examples/`](./examples/) for complete working examples:
 
 - **[`openai-structured-output/`](./examples/openai-structured-output/)** - Using godantic with OpenAI's structured output API to extract meeting summaries
 - **[`gemini-structured-output/`](./examples/gemini-structured-output/)** - Using godantic with Google Gemini to parse task lists with enums and unions
-- **[`gin-api/`](./examples/gin-api/)** - Complete Gin REST API with automatic OpenAPI generation and Swagger UI
-- **[`payment-methods/`](./examples/payment-methods/)** - Validating polymorphic payment requests using discriminated unions  
 - **[`llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/)** - Streaming partial JSON during long-running generation using Gemini
+- **[`payment-methods/`](./examples/payment-methods/)** - Validating payment requests interfaces using discriminated unions
+- **[`gin-api/`](./examples/gin-api/)** - Complete Gin REST API with automatic OpenAPI generation and Swagger UI
+
