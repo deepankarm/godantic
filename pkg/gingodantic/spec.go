@@ -478,9 +478,7 @@ func ExtractPathParameters(path string) []string {
 // paramLocation: "path", "query", "header", or "cookie"
 // paramNames: for path params, the list of param names from the URL pattern (to determine required status)
 func extractParametersFromType(t reflect.Type, paramLocation string, paramNames []string) []any {
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
+	t = reflectutil.UnwrapPointer(t)
 
 	if t.Kind() != reflect.Struct {
 		return nil

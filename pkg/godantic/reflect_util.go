@@ -2,6 +2,8 @@ package godantic
 
 import (
 	"reflect"
+
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 )
 
 // fieldScanner provides common reflection utilities for scanning Field{Name}() methods
@@ -142,10 +144,7 @@ func (foh *fieldOptionHolder) toPublic() FieldOptionInfo {
 // Returns a map of field name -> field option info
 // This is the public API for schema generation and other external uses
 func ScanTypeFieldOptions(t reflect.Type) map[string]FieldOptionInfo {
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
+	t = reflectutil.UnwrapPointer(t)
 	internalOpts := scanner.scanFieldOptionsFromType(t)
 
 	// Convert to public API

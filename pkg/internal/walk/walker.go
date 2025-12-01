@@ -129,10 +129,24 @@ func (w *Walker) Walk(val reflect.Value, data []byte) error {
 
 // walkRootSlice handles root-level slice traversal.
 // It parses the JSON array, populates the slice, and walks each element.
+// If data is nil/empty, it walks existing slice elements (for validation/marshaling).
 func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
-	// Parse JSON array
+	elemType := slice.Type().Elem()
+	actualElemType, isPointer := reflectutil.UnwrapPointerInfo(elemType)
+
+	// Only walk if elements are structs
+	if actualElemType.Kind() != reflect.Struct {
+		// For primitive slices, just unmarshal directly
+		if len(data) > 0 {
+			json.Unmarshal(data, slice.Addr().Interface())
+		}
+		return nil
+	}
+
+	// Parse JSON array if we have data (unmarshaling)
 	var rawElements []json.RawMessage
-	if len(data) > 0 {
+	hasData := len(data) > 0
+	if hasData {
 		if err := json.Unmarshal(data, &rawElements); err != nil {
 			// Report error if we have an unmarshal processor
 			for _, p := range w.processors {
@@ -146,32 +160,15 @@ func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
 				}
 			}
 		}
-	}
-
-	elemType := slice.Type().Elem()
-	isPointer := elemType.Kind() == reflect.Pointer
-	actualElemType := elemType
-	if isPointer {
-		actualElemType = actualElemType.Elem()
-	}
-
-	// Only walk if elements are structs
-	if actualElemType.Kind() != reflect.Struct {
-		// For primitive slices, just unmarshal directly
-		if len(data) > 0 {
-			json.Unmarshal(data, slice.Addr().Interface())
+		// Resize slice to match JSON array length
+		if slice.Len() != len(rawElements) {
+			newSlice := reflect.MakeSlice(slice.Type(), len(rawElements), len(rawElements))
+			slice.Set(newSlice)
 		}
-		return nil
 	}
 
-	// Resize slice to match JSON array length
-	if slice.Len() != len(rawElements) {
-		newSlice := reflect.MakeSlice(slice.Type(), len(rawElements), len(rawElements))
-		slice.Set(newSlice)
-	}
-
-	// Initialize and walk each element
-	for i, rawElem := range rawElements {
+	// Walk each element
+	for i := range slice.Len() {
 		elemVal := slice.Index(i)
 
 		// Initialize pointer elements
@@ -184,8 +181,10 @@ func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
 
 		// Parse element JSON
 		var rawFields map[string]json.RawMessage
-		if len(rawElem) > 0 {
-			json.Unmarshal(rawElem, &rawFields)
+		if hasData && i < len(rawElements) {
+			if len(rawElements[i]) > 0 {
+				json.Unmarshal(rawElements[i], &rawFields)
+			}
 		}
 
 		elemPath := appendPathIndex([]string{}, i)

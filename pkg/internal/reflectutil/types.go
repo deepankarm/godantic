@@ -91,6 +91,14 @@ func UnwrapPointer(t reflect.Type) reflect.Type {
 	return t
 }
 
+// UnwrapPointerInfo returns the unwrapped type and whether it was a pointer.
+func UnwrapPointerInfo(t reflect.Type) (unwrapped reflect.Type, isPointer bool) {
+	if t.Kind() == reflect.Pointer {
+		return t.Elem(), true
+	}
+	return t, false
+}
+
 // UnwrapValue unwraps pointers and interfaces to get the underlying value.
 func UnwrapValue(v reflect.Value) reflect.Value {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
@@ -105,10 +113,7 @@ func UnwrapValue(v reflect.Value) reflect.Value {
 // IsWalkableSliceElem checks if a slice's element type should be walked.
 // Returns true for structs (non-basic) and interfaces (discriminated unions).
 func IsWalkableSliceElem(sliceType reflect.Type) bool {
-	elemType := sliceType.Elem()
-	if elemType.Kind() == reflect.Pointer {
-		elemType = elemType.Elem()
-	}
+	elemType := UnwrapPointer(sliceType.Elem())
 	// Interfaces (for discriminated unions) - actual elements are concrete structs
 	if elemType.Kind() == reflect.Interface {
 		return true
@@ -123,9 +128,7 @@ func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
 		return
 	}
 
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
+	t = UnwrapPointer(t)
 
 	if t.Kind() != reflect.Struct {
 		return
@@ -141,7 +144,7 @@ func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
 	}
 
 	// Process all fields
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		fieldType := t.Field(i).Type
 
 		// Unwrap slices/arrays
@@ -149,11 +152,7 @@ func CollectStructTypes(t reflect.Type, types map[string]reflect.Type) {
 			fieldType = fieldType.Elem()
 		}
 
-		// Unwrap pointers
-		if fieldType.Kind() == reflect.Pointer {
-			fieldType = fieldType.Elem()
-		}
-
+		fieldType = UnwrapPointer(fieldType)
 		if fieldType.Kind() == reflect.Struct {
 			CollectStructTypes(fieldType, types)
 		}
