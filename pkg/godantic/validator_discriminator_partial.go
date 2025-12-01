@@ -8,8 +8,8 @@ import (
 	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 )
 
-// marshalPartialDiscriminatedUnion handles partial JSON for discriminated unions.
-func (v *Validator[T]) marshalPartialDiscriminatedUnion(data []byte, cfg *discriminatorConfig) (*T, *PartialState, ValidationErrors) {
+// unmarshalPartialDiscriminatedUnion handles partial JSON for discriminated unions.
+func (v *Validator[T]) unmarshalPartialDiscriminatedUnion(data []byte, cfg *discriminatorConfig) (*T, *PartialState, ValidationErrors) {
 	// Parse and repair the partial JSON first
 	parseResult, parseErrs := parsePartialJSON(data)
 	if parseErrs != nil {
@@ -34,7 +34,7 @@ func (v *Validator[T]) marshalPartialDiscriminatedUnion(data []byte, cfg *discri
 	}
 
 	// Use common partial marshal flow
-	result, state, errs := marshalPartialCommon[T](instance.ptr, parseResult)
+	result, state, errs := unmarshalPartialCommon[T](instance.ptr, parseResult)
 	if result == nil {
 		return nil, state, errs
 	}

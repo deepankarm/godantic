@@ -52,7 +52,7 @@ func (v *Validator[T]) ValidateFromStringMap(data map[string]string) (*T, Valida
 		}
 	}
 
-	return v.Marshal(jsonData)
+	return v.Unmarshal(jsonData)
 }
 
 // ValidateFromMultiValueMap validates data from a map[string][]string (for query params, headers)
@@ -110,7 +110,7 @@ func (v *Validator[T]) ValidateFromMultiValueMap(data map[string][]string) (*T, 
 		}
 	}
 
-	return v.Marshal(jsonData)
+	return v.Unmarshal(jsonData)
 }
 
 // convertStringToType converts a string value to the appropriate Go type

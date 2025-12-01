@@ -141,7 +141,7 @@ Action items:
 	}
 
 	validator := godantic.NewValidator[MeetingSummary]()
-	meeting, errs := validator.Marshal([]byte(completion.Choices[0].Message.Content))
+	meeting, errs := validator.Unmarshal([]byte(completion.Choices[0].Message.Content))
 	if len(errs) > 0 {
 		fmt.Println("Validation errors:")
 		for _, e := range errs {

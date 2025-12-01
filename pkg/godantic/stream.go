@@ -47,7 +47,7 @@ func (sp *StreamParser[T]) Feed(chunk []byte) (*T, *PartialState, ValidationErro
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.buffer = append(sp.buffer, chunk...)
-	return sp.validator.MarshalPartial(sp.buffer)
+	return sp.validator.UnmarshalPartial(sp.buffer)
 }
 
 // Reset clears the buffer and starts fresh.

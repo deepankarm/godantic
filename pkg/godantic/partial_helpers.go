@@ -35,9 +35,9 @@ func applyAfterValidateIfComplete[T any](obj *T, state *PartialState) Validation
 	return nil
 }
 
-// marshalPartialCommon handles the common flow for partial JSON unmarshaling.
+// unmarshalPartialCommon handles the common flow for partial JSON unmarshaling.
 // This is used by both regular structs and discriminated unions.
-func marshalPartialCommon[T any](objPtr reflect.Value, parseResult *partialjson.ParseResult) (*T, *PartialState, ValidationErrors) {
+func unmarshalPartialCommon[T any](objPtr reflect.Value, parseResult *partialjson.ParseResult) (*T, *PartialState, ValidationErrors) {
 	// Apply BeforeValidate hook
 	repairedData, hookErrs := applyBeforeValidateHook[[]byte](objPtr, parseResult.Repaired)
 	if hookErrs != nil {

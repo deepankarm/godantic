@@ -40,7 +40,7 @@ func TestBeforeValidateHook(t *testing.T) {
 
 	t.Run("string content normalized to array", func(t *testing.T) {
 		jsonStr := `{"role": "user", "content": "hello world"}`
-		msg, errs := validator.Marshal([]byte(jsonStr))
+		msg, errs := validator.Unmarshal([]byte(jsonStr))
 		if len(errs) > 0 {
 			t.Fatalf("expected no errors, got %v", errs)
 		}
@@ -55,7 +55,7 @@ func TestBeforeValidateHook(t *testing.T) {
 
 	t.Run("array content remains array", func(t *testing.T) {
 		jsonStr := `{"role": "user", "content": ["hello", "world"]}`
-		msg, errs := validator.Marshal([]byte(jsonStr))
+		msg, errs := validator.Unmarshal([]byte(jsonStr))
 		if len(errs) > 0 {
 			t.Fatalf("expected no errors, got %v", errs)
 		}
@@ -70,7 +70,7 @@ func TestAfterValidateHook(t *testing.T) {
 	validator := godantic.NewValidator[MessageWithHooks]()
 
 	jsonStr := `{"role": "USER", "content": ["hello"]}`
-	msg, errs := validator.Marshal([]byte(jsonStr))
+	msg, errs := validator.Unmarshal([]byte(jsonStr))
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -113,7 +113,7 @@ func TestBeforeSerializeHook(t *testing.T) {
 	validator := godantic.NewValidator[OutputTransformer]()
 
 	obj := OutputTransformer{Name: "test"}
-	data, errs := validator.Unmarshal(&obj)
+	data, errs := validator.Marshal(&obj)
 	if len(errs) > 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -192,7 +192,7 @@ func TestBeforeValidateWithDiscriminatedUnionSlice(t *testing.T) {
 
 	t.Run("string content normalized to array of discriminated unions", func(t *testing.T) {
 		jsonStr := `{"role": "user", "content": "hello world"}`
-		msg, errs := validator.Marshal([]byte(jsonStr))
+		msg, errs := validator.Unmarshal([]byte(jsonStr))
 		if len(errs) > 0 {
 			t.Fatalf("expected no errors, got %v", errs)
 		}
@@ -213,7 +213,7 @@ func TestBeforeValidateWithDiscriminatedUnionSlice(t *testing.T) {
 
 	t.Run("array content remains array", func(t *testing.T) {
 		jsonStr := `{"role": "user", "content": [{"type": "text", "text": "hello"}]}`
-		msg, errs := validator.Marshal([]byte(jsonStr))
+		msg, errs := validator.Unmarshal([]byte(jsonStr))
 		if len(errs) > 0 {
 			t.Fatalf("expected no errors, got %v", errs)
 		}
