@@ -469,20 +469,20 @@ func TestMarshal_ConvenienceMethod(t *testing.T) {
 		}
 	})
 
-	t.Run("round-trip: Marshal then Unmarshal", func(t *testing.T) {
+	t.Run("round-trip: Unmarshal then Marshal", func(t *testing.T) {
 		// Start with JSON
 		originalJSON := []byte(`{"name": "test-server", "port": 9000}`)
 
-		// Marshal: JSON -> struct (with defaults and validation)
+		// Unmarshal: JSON -> struct (with defaults and validation)
 		settings, errs := validator.Unmarshal(originalJSON)
 		if len(errs) != 0 {
-			t.Fatalf("Marshal failed: %v", errs)
+			t.Fatalf("Unmarshal failed: %v", errs)
 		}
 
-		// Unmarshal: struct -> JSON (with validation)
+		// Marshal: struct -> JSON (with validation)
 		resultJSON, errs := validator.Marshal(settings)
 		if len(errs) != 0 {
-			t.Fatalf("Unmarshal failed: %v", errs)
+			t.Fatalf("Marshal failed: %v", errs)
 		}
 
 		// Parse result to verify
