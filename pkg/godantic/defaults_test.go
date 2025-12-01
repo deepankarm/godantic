@@ -204,8 +204,8 @@ func TestDefaultsWithJSON(t *testing.T) {
 	})
 }
 
-// Test Marshal convenience method
-func TestMarshal(t *testing.T) {
+// Test Unmarshal convenience method
+func TestUnmarshal_ConvenienceMethod(t *testing.T) {
 	validator := godantic.NewValidator[ServerSettings]()
 
 	t.Run("valid JSON with all fields", func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestMarshal(t *testing.T) {
 			"description": "Production server"
 		}`)
 
-		settings, errs := validator.Marshal(jsonData)
+		settings, errs := validator.Unmarshal(jsonData)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -238,7 +238,7 @@ func TestMarshal(t *testing.T) {
 	t.Run("JSON with missing fields gets defaults applied", func(t *testing.T) {
 		jsonData := []byte(`{"name": "staging"}`)
 
-		settings, errs := validator.Marshal(jsonData)
+		settings, errs := validator.Unmarshal(jsonData)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -258,7 +258,7 @@ func TestMarshal(t *testing.T) {
 	t.Run("invalid JSON returns error", func(t *testing.T) {
 		jsonData := []byte(`{invalid json}`)
 
-		settings, errs := validator.Marshal(jsonData)
+		settings, errs := validator.Unmarshal(jsonData)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 error, got %d", len(errs))
 		}
@@ -277,7 +277,7 @@ func TestMarshal(t *testing.T) {
 		// Missing required Name field
 		jsonData := []byte(`{"port": 3000}`)
 
-		settings, errs := validator.Marshal(jsonData)
+		settings, errs := validator.Unmarshal(jsonData)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 validation error, got %d: %v", len(errs), errs)
 		}
@@ -308,7 +308,7 @@ func TestMarshal(t *testing.T) {
 		jsonData := []byte(`{"name": "test", "port": 9000}`)
 
 		// One-liner: unmarshal + defaults + validate
-		settings, errs := validator.Marshal(jsonData)
+		settings, errs := validator.Unmarshal(jsonData)
 
 		if len(errs) != 0 {
 			t.Fatalf("validation failed: %v", errs)
@@ -330,7 +330,7 @@ func TestMarshal(t *testing.T) {
 		// JSON with explicit false - indistinguishable from omitted field
 		jsonData := []byte(`{"name": "test", "enabled": false}`)
 
-		settings, errs := validator.Marshal(jsonData)
+		settings, errs := validator.Unmarshal(jsonData)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -359,8 +359,8 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-// Test Unmarshal convenience method
-func TestUnmarshal(t *testing.T) {
+// Test Marshal convenience method
+func TestMarshal_ConvenienceMethod(t *testing.T) {
 	validator := godantic.NewValidator[ServerSettings]()
 
 	t.Run("valid struct marshals to JSON", func(t *testing.T) {
@@ -374,7 +374,7 @@ func TestUnmarshal(t *testing.T) {
 			Description: "Production server",
 		}
 
-		jsonData, errs := validator.Unmarshal(&settings)
+		jsonData, errs := validator.Marshal(&settings)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -400,7 +400,7 @@ func TestUnmarshal(t *testing.T) {
 			// Other fields are zero values, should get defaults
 		}
 
-		jsonData, errs := validator.Unmarshal(&settings)
+		jsonData, errs := validator.Marshal(&settings)
 		if len(errs) != 0 {
 			t.Fatalf("expected no errors, got: %v", errs)
 		}
@@ -430,7 +430,7 @@ func TestUnmarshal(t *testing.T) {
 			Port: 3000,
 		}
 
-		jsonData, errs := validator.Unmarshal(&settings)
+		jsonData, errs := validator.Marshal(&settings)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 validation error, got %d: %v", len(errs), errs)
 		}
@@ -453,7 +453,7 @@ func TestUnmarshal(t *testing.T) {
 			Port: 70000, // Exceeds max of 65535
 		}
 
-		jsonData, errs := validator.Unmarshal(&settings)
+		jsonData, errs := validator.Marshal(&settings)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 validation error, got %d: %v", len(errs), errs)
 		}
@@ -469,20 +469,20 @@ func TestUnmarshal(t *testing.T) {
 		}
 	})
 
-	t.Run("round-trip: Marshal then Unmarshal", func(t *testing.T) {
+	t.Run("round-trip: Unmarshal then Marshal", func(t *testing.T) {
 		// Start with JSON
 		originalJSON := []byte(`{"name": "test-server", "port": 9000}`)
 
-		// Marshal: JSON -> struct (with defaults and validation)
-		settings, errs := validator.Marshal(originalJSON)
-		if len(errs) != 0 {
-			t.Fatalf("Marshal failed: %v", errs)
-		}
-
-		// Unmarshal: struct -> JSON (with validation)
-		resultJSON, errs := validator.Unmarshal(settings)
+		// Unmarshal: JSON -> struct (with defaults and validation)
+		settings, errs := validator.Unmarshal(originalJSON)
 		if len(errs) != 0 {
 			t.Fatalf("Unmarshal failed: %v", errs)
+		}
+
+		// Marshal: struct -> JSON (with validation)
+		resultJSON, errs := validator.Marshal(settings)
+		if len(errs) != 0 {
+			t.Fatalf("Marshal failed: %v", errs)
 		}
 
 		// Parse result to verify
@@ -562,7 +562,7 @@ func TestNestedStructDefaults(t *testing.T) {
 		jsonData := []byte(`{"name": "John"}`)
 		validator := godantic.NewValidator[PersonWithAddress]()
 
-		person, errs := validator.Marshal(jsonData)
+		person, errs := validator.Unmarshal(jsonData)
 		if errs != nil {
 			t.Fatalf("Validation failed: %v", errs)
 		}

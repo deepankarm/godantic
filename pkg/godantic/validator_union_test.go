@@ -8,11 +8,11 @@ import (
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Discriminated Union - Marshal (JSON → Struct)
+// Discriminated Union - Unmarshal (JSON → Struct)
 // Uses shared TAnimal, TCat, TDog, TBird fixtures from testdata_test.go
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestUnion_Marshal(t *testing.T) {
+func TestUnion_Unmarshal(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -61,7 +61,7 @@ func TestUnion_Marshal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			animal, errs := validator.Marshal([]byte(tt.json))
+			animal, errs := validator.Unmarshal([]byte(tt.json))
 
 			if tt.wantErr {
 				if len(errs) == 0 {
@@ -114,7 +114,7 @@ func TestUnion_Marshal(t *testing.T) {
 	}
 }
 
-func TestUnion_Marshal_Validation(t *testing.T) {
+func TestUnion_Unmarshal_Validation(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -145,7 +145,7 @@ func TestUnion_Marshal_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, errs := validator.Marshal([]byte(tt.json))
+			_, errs := validator.Unmarshal([]byte(tt.json))
 			if len(errs) == 0 {
 				t.Fatal("expected validation error")
 			}
@@ -165,10 +165,10 @@ func TestUnion_Marshal_Validation(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Discriminated Union - Unmarshal (Struct → JSON)
+// Discriminated Union - Marshal (Struct → JSON)
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestUnion_Unmarshal(t *testing.T) {
+func TestUnion_Marshal(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -207,7 +207,7 @@ func TestUnion_Unmarshal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jsonData, errs := validator.Unmarshal(&tt.animal)
+			jsonData, errs := validator.Marshal(&tt.animal)
 
 			if tt.wantErr {
 				if len(errs) == 0 {
@@ -238,7 +238,7 @@ func TestUnion_Unmarshal(t *testing.T) {
 	}
 }
 
-func TestUnion_Unmarshal_Validation(t *testing.T) {
+func TestUnion_Marshal_Validation(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -263,7 +263,7 @@ func TestUnion_Unmarshal_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, errs := validator.Unmarshal(&tt.animal)
+			_, errs := validator.Marshal(&tt.animal)
 			if len(errs) == 0 {
 				t.Fatal("expected validation error")
 			}
@@ -295,7 +295,7 @@ func TestUnion_StringKeys(t *testing.T) {
 		}),
 	)
 
-	animal, errs := validator.Marshal([]byte(`{"species": "cat", "name": "Mittens", "lives_left": 9}`))
+	animal, errs := validator.Unmarshal([]byte(`{"species": "cat", "name": "Mittens", "lives_left": 9}`))
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -340,7 +340,7 @@ func (c *TCatWithDefaults) FieldColor() godantic.FieldOptions[string] {
 	return godantic.Field(godantic.Default("orange"))
 }
 
-func TestUnion_Unmarshal_AppliesDefaults(t *testing.T) {
+func TestUnion_Marshal_AppliesDefaults(t *testing.T) {
 	validator := godantic.NewValidator[TAnimal](
 		godantic.WithDiscriminatorTyped("species", map[TAnimalSpecies]any{
 			TSpeciesCat: &TCatWithDefaults{},
@@ -350,7 +350,7 @@ func TestUnion_Unmarshal_AppliesDefaults(t *testing.T) {
 	cat := TCatWithDefaults{Species: TSpeciesCat, Name: "Garfield"}
 	var animal TAnimal = &cat
 
-	jsonData, errs := validator.Unmarshal(&animal)
+	jsonData, errs := validator.Marshal(&animal)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -438,8 +438,8 @@ func TestUnion_SliceOfUnions(t *testing.T) {
 		}
 	})
 
-	t.Run("marshal", func(t *testing.T) {
-		doc, errs := validator.Marshal([]byte(`{
+	t.Run("unmarshal", func(t *testing.T) {
+		doc, errs := validator.Unmarshal([]byte(`{
 			"title": "Test",
 			"blocks": [
 				{"type": "text", "text": "Hello"},
@@ -469,7 +469,7 @@ func TestUnion_SliceOfUnions(t *testing.T) {
 		}
 	})
 
-	t.Run("unmarshal", func(t *testing.T) {
+	t.Run("marshal", func(t *testing.T) {
 		doc := TDocument{
 			Title: "Round Trip",
 			Blocks: []TContentBlock{
@@ -478,7 +478,7 @@ func TestUnion_SliceOfUnions(t *testing.T) {
 			},
 		}
 
-		jsonData, errs := validator.Unmarshal(&doc)
+		jsonData, errs := validator.Marshal(&doc)
 		if len(errs) != 0 {
 			t.Fatalf("unexpected errors: %v", errs)
 		}
@@ -536,7 +536,7 @@ func TestUnion_SliceValidation(t *testing.T) {
 	validator := godantic.NewValidator[TBlockContainer]()
 
 	t.Run("valid_items", func(t *testing.T) {
-		_, errs := validator.Marshal([]byte(`{
+		_, errs := validator.Unmarshal([]byte(`{
 			"title": "Test",
 			"items": [
 				{"type": "text", "text": "Hello"},
@@ -549,7 +549,7 @@ func TestUnion_SliceValidation(t *testing.T) {
 	})
 
 	t.Run("missing_required_in_element", func(t *testing.T) {
-		_, errs := validator.Marshal([]byte(`{
+		_, errs := validator.Unmarshal([]byte(`{
 			"title": "Test",
 			"items": [{"type": "complex", "data": "Missing ID"}]
 		}`))
@@ -570,7 +570,7 @@ func TestUnion_SliceValidation(t *testing.T) {
 	})
 
 	t.Run("multiple_validation_errors", func(t *testing.T) {
-		_, errs := validator.Marshal([]byte(`{
+		_, errs := validator.Unmarshal([]byte(`{
 			"title": "Test",
 			"items": [
 				{"type": "complex", "data": "First"},

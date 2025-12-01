@@ -50,7 +50,7 @@ func BenchmarkUnmarshal_Simple(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Marshal(data)
+		_, errs := validator.Unmarshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}
@@ -65,7 +65,7 @@ func BenchmarkUnmarshal_WithDefaults(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Marshal(data)
+		_, errs := validator.Unmarshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}
@@ -98,7 +98,7 @@ func BenchmarkUnmarshal_Medium(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Marshal(data)
+		_, errs := validator.Unmarshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}
@@ -114,7 +114,7 @@ func BenchmarkUnmarshal_Godantic(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Marshal(data)
+		_, errs := validator.Unmarshal(data)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}
@@ -153,7 +153,7 @@ func BenchmarkMarshal_Simple(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Unmarshal(&product)
+		_, errs := validator.Marshal(&product)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}
@@ -173,7 +173,7 @@ func BenchmarkMarshal_WithDefaults(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Unmarshal(&product)
+		_, errs := validator.Marshal(&product)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}
@@ -206,7 +206,7 @@ func BenchmarkMarshal_Medium(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := validator.Unmarshal(&user)
+		_, err := validator.Marshal(&user)
 		if err != nil {
 			b.Fatalf("unmarshal failed: %v", err)
 		}
@@ -228,7 +228,7 @@ func BenchmarkMarshal_Godantic(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, errs := validator.Unmarshal(&product)
+		_, errs := validator.Marshal(&product)
 		if len(errs) != 0 {
 			b.Fatalf("unexpected validation errors: %v", errs)
 		}

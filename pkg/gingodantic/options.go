@@ -38,7 +38,7 @@ func WithRequest[T any]() SchemaOption {
 	return func(spec *EndpointSpec) {
 		spec.RequestType = reflect.TypeOf(zero)
 		spec.validators.request = func(data []byte) (any, godantic.ValidationErrors) {
-			obj, errs := validator.Marshal(data)
+			obj, errs := validator.Unmarshal(data)
 			if errs != nil {
 				return nil, errs
 			}

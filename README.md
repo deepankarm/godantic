@@ -68,11 +68,11 @@ schemaGen := schema.NewGenerator[TaskList]()
 flatSchema, _ := schemaGen.GenerateFlattened()
 
 // 3. Send schema to your LLM provider (OpenAI, Gemini, Claude)
-response := callLLM(prompt, flatSchema)
+jsonData := callLLM(prompt, flatSchema)
 
 // 4. Validate response before using it
 validator := godantic.NewValidator[TaskList]()
-result, errs := validator.Marshal(response)
+result, errs := validator.Unmarshal(jsonData)
 if len(errs) > 0 {
     // LLM returned invalid data - handle or retry
 }
@@ -107,7 +107,7 @@ for chunk := range llmStream {
 - Skips validation for incomplete fields
 - Applies defaults automatically
 
-See [`examples/llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/) for a complete working example with Gemini streaming.
+See [`examples/llm-partialjson-streaming/`](./examples/llm-partialjson-streaming/main.go) for a complete working example with Gemini streaming.
 
 ### Provider Examples
 
@@ -345,7 +345,7 @@ validator := godantic.NewValidator[PaymentMethod](
 )
 
 // Automatically routes to correct type based on "type" field
-payment, errs := validator.Marshal(jsonData)
+payment, errs := validator.Unmarshal(jsonData)
 
 // Type switch for handling
 switch p := (*payment).(type) {
@@ -395,7 +395,7 @@ All validation constraints (min, max, pattern, etc.) are automatically included 
 
 Godantic provides convenient methods for working with JSON that automatically apply defaults and validate:
 
-**`Marshal` - JSON → Struct (with validation)**
+**`Unmarshal` - JSON → Struct (with validation)**
 
 Unmarshals JSON, applies defaults, and validates in one step:
 
@@ -403,14 +403,14 @@ Unmarshals JSON, applies defaults, and validates in one step:
 validator := godantic.NewValidator[User]()
 
 // One-liner: unmarshal + defaults + validate
-user, errs := validator.Marshal(jsonData)
+user, errs := validator.Unmarshal(jsonData)
 if len(errs) > 0 {
     // Handle validation errors
 }
 // user is ready to use with all defaults applied
 ```
 
-**`Unmarshal` - Struct → JSON (with validation)**
+**`Marshal` - Struct → JSON (with validation)**
 
 Validates, applies defaults, and marshals to JSON in one step:
 
@@ -418,7 +418,7 @@ Validates, applies defaults, and marshals to JSON in one step:
 validator := godantic.NewValidator[User]()
 
 // One-liner: validate + defaults + marshal
-jsonData, errs := validator.Unmarshal(&user)
+jsonData, errs := validator.Marshal(&user)
 if len(errs) > 0 {
     // Handle validation errors
 }
@@ -483,8 +483,8 @@ func (u *User) AfterSerialize(data []byte) ([]byte, error) {
 
 **Execution order:**
 
-- **Marshal** (JSON → Struct): `BeforeValidate` → unmarshal → validate → defaults → `AfterValidate`
-- **Unmarshal** (Struct → JSON): `BeforeSerialize` → validate → defaults → marshal → `AfterSerialize`
+- **Unmarshal** (JSON → Struct): `BeforeValidate` → unmarshal → validate → defaults → `AfterValidate`
+- **Marshal** (Struct → JSON): `BeforeSerialize` → validate → defaults → marshal → `AfterSerialize`
 
 ### Complex Structures
 

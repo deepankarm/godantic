@@ -291,7 +291,7 @@ func TestSlicesOfStructsWithFieldMethods(t *testing.T) {
 			]
 		}`
 
-		_, errs := validator.Marshal([]byte(jsonStr))
+		_, errs := validator.Unmarshal([]byte(jsonStr))
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 		}

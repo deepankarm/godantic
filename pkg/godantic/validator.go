@@ -139,13 +139,13 @@ func (v *Validator[T]) ApplyDefaults(obj *T) error {
 	return walkDefaults(objPtr)
 }
 
-// Marshal unmarshals JSON data, applies defaults, and validates.
+// Unmarshal unmarshals JSON data, applies defaults, and validates.
 // This is a convenience method that combines the three common steps:
 // 1. Unmarshal JSON into the struct (or route to correct type for discriminated unions)
 // 2. Apply default values to zero-valued fields
 // 3. Validate the struct
 // Returns the populated struct and any validation errors.
-func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
+func (v *Validator[T]) Unmarshal(data []byte) (*T, ValidationErrors) {
 	// Check if this is a discriminated union validator
 	if v.config.discriminator != nil {
 		return v.validateDiscriminatedUnion(data, v.config.discriminator)
@@ -188,16 +188,16 @@ func (v *Validator[T]) Marshal(data []byte) (*T, ValidationErrors) {
 	return &obj, nil
 }
 
-// Unmarshal validates the struct, applies defaults, and marshals to JSON.
+// Marshal validates the struct, applies defaults, and marshals to JSON.
 // This is a convenience method that combines the three common steps:
 // 1. Validate the struct
 // 2. Apply default values to zero-valued fields
 // 3. Marshal the struct to JSON
 // Returns the JSON bytes and any validation errors.
-func (v *Validator[T]) Unmarshal(obj *T) ([]byte, ValidationErrors) {
+func (v *Validator[T]) Marshal(obj *T) ([]byte, ValidationErrors) {
 	// Check if this is a discriminated union validator
 	if v.config.discriminator != nil {
-		return v.unmarshalDiscriminatedUnion(obj, v.config.discriminator)
+		return v.marshalDiscriminatedUnion(obj, v.config.discriminator)
 	}
 
 	// BeforeSerialize hook: transform struct before validation
@@ -256,10 +256,10 @@ func (v *Validator[T]) FieldOptions() map[string]any {
 	return result
 }
 
-// MarshalPartial parses potentially incomplete JSON into a struct.
+// UnmarshalPartial parses potentially incomplete JSON into a struct.
 // Returns the partially populated struct, its completion state, and any errors.
 //
-// Unlike Marshal(), this method:
+// Unlike Unmarshal(), this method:
 // - Does NOT fail on incomplete JSON
 // - Tracks which fields are incomplete
 // - Skips validation for incomplete fields
@@ -267,13 +267,13 @@ func (v *Validator[T]) FieldOptions() map[string]any {
 // Example (LLM streaming):
 //
 //	validator := godantic.NewValidator[ToolCall]()
-//	result, state, errs := validator.MarshalPartial([]byte(`{"type": "sear`))
+//	result, state, errs := validator.UnmarshalPartial([]byte(`{"type": "sear`))
 //	if state.IsComplete {
 //	    // Full JSON received - use result
 //	}
-func (v *Validator[T]) MarshalPartial(data []byte) (*T, *PartialState, ValidationErrors) {
+func (v *Validator[T]) UnmarshalPartial(data []byte) (*T, *PartialState, ValidationErrors) {
 	if v.config.discriminator != nil {
-		return v.marshalPartialDiscriminatedUnion(data, v.config.discriminator)
+		return v.unmarshalPartialDiscriminatedUnion(data, v.config.discriminator)
 	}
 
 	// Parse and repair the incomplete JSON first
@@ -285,5 +285,5 @@ func (v *Validator[T]) MarshalPartial(data []byte) (*T, *PartialState, Validatio
 	var obj T
 	objPtr := reflect.New(reflect.TypeOf(obj))
 
-	return marshalPartialCommon[T](objPtr, parseResult)
+	return unmarshalPartialCommon[T](objPtr, parseResult)
 }
