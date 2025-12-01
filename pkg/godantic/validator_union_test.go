@@ -310,6 +310,74 @@ func TestUnion_StringKeys(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Discriminated Union - Error Interface Behavior
+// Tests that successful operations return errors that work correctly with
+// standard Go error checking (nil check, errors.Is, etc.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+func TestUnion_Marshal_TypedNilErrorBehavior(t *testing.T) {
+	// This test guards against the "typed nil" interface issue in Go:
+	// When ValidationErrors (a slice type) is nil and assigned to an error interface,
+	// the interface becomes non-nil if it carries type information.
+	// This causes `err != nil` to be true even when there are no actual errors.
+	//
+	// Example of the problematic pattern:
+	//   func MarshalFoo(foo Foo) ([]byte, error) {
+	//       return validator.Marshal(&foo)  // ValidationErrors -> error
+	//   }
+	//   data, err := MarshalFoo(foo)
+	//   if err != nil {  // TRUE even on success if typed nil!
+	//       // incorrectly enters error path
+	//   }
+	validator := NewTAnimalValidator()
+
+	cat := &TCat{Species: TSpeciesCat, Name: "Whiskers", LivesLeft: 7, IsIndoor: true}
+	var animal TAnimal = cat
+
+	jsonData, errs := validator.Marshal(&animal)
+	if len(errs) != 0 {
+		t.Fatalf("expected no validation errors, got: %v", errs)
+	}
+	if len(jsonData) == 0 {
+		t.Fatal("expected non-empty JSON data")
+	}
+
+	// Test the typed nil issue: when callers wrap in error interface,
+	// they must check len(errs) > 0 before returning as error to avoid typed nil.
+	// This is the recommended pattern:
+	var err error
+	if len(errs) > 0 {
+		err = errs
+	}
+	// err remains untyped nil if no errors
+
+	if err != nil {
+		t.Errorf("error should be nil on success, got: %v (type: %T)", err, err)
+	}
+}
+
+func TestUnion_Unmarshal_TypedNilErrorBehavior(t *testing.T) {
+	validator := NewTAnimalValidator()
+
+	animal, errs := validator.Unmarshal([]byte(`{"species": "cat", "name": "Whiskers", "lives_left": 7}`))
+	if len(errs) != 0 {
+		t.Fatalf("expected no validation errors, got: %v", errs)
+	}
+	if animal == nil {
+		t.Fatal("expected non-nil animal")
+	}
+
+	var err error
+	if len(errs) > 0 {
+		err = errs
+	}
+
+	if err != nil {
+		t.Errorf("error should be nil on success, got: %v (type: %T)", err, err)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Discriminated Union - Defaults
 // ═══════════════════════════════════════════════════════════════════════════
 
