@@ -66,7 +66,7 @@ func (u *unionInstance[T]) Result() T {
 func newUnionFromJSON[T any](data []byte, cfg *discriminatorConfig) (*unionInstance[T], ValidationErrors) {
 	var peek map[string]any
 	if err := json.Unmarshal(data, &peek); err != nil {
-		return nil, ValidationErrors{{Message: fmt.Sprintf("json unmarshal failed: %v", err), Type: ErrorTypeJSONDecode}}
+		return nil, ValidationErrors{{Message: fmt.Sprintf("JSON unmarshal failed: %v", err), Type: ErrorTypeJSONDecode}}
 	}
 
 	discValue, ok := peek[cfg.field]

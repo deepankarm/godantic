@@ -78,13 +78,25 @@ func NewWalker(scanner FieldScanner, processors ...Processor) *Walker {
 	}
 }
 
-// Walk traverses a struct value, calling processors for each field.
-// val should be the struct value (not pointer). data is optional raw JSON.
+// Walk traverses a struct or slice value, calling processors for each field/element.
+// val should be the value (not pointer). data is optional raw JSON.
 func (w *Walker) Walk(val reflect.Value, data []byte) error {
-	// Reset visited map for each walk
 	w.visited = make(map[uintptr]bool)
 
-	// Parse JSON once at root if provided
+	// Unwrap pointer at root
+	if val.Kind() == reflect.Pointer {
+		if val.IsNil() {
+			return nil
+		}
+		val = val.Elem()
+	}
+
+	// Handle root-level slices
+	if val.Kind() == reflect.Slice {
+		return w.walkRootSlice(val, data)
+	}
+
+	// Parse JSON as object for struct root
 	var rawFields map[string]json.RawMessage
 	var jsonParseErr error
 	if len(data) > 0 {
@@ -105,7 +117,7 @@ func (w *Walker) Walk(val reflect.Value, data []byte) error {
 		if up, ok := w.processors[0].(*UnmarshalProcessor); ok {
 			up.Errors = append(up.Errors, ValidationError{
 				Loc:     []string{},
-				Message: "json unmarshal failed: " + jsonParseErr.Error(),
+				Message: "JSON unmarshal failed: " + jsonParseErr.Error(),
 				Type:    errors.ErrorTypeJSONDecode,
 			})
 		}
@@ -113,6 +125,76 @@ func (w *Walker) Walk(val reflect.Value, data []byte) error {
 	}
 
 	return w.walkStruct(val, rawFields, []string{}, true)
+}
+
+// walkRootSlice handles root-level slice traversal.
+// It parses the JSON array, populates the slice, and walks each element.
+func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
+	// Parse JSON array
+	var rawElements []json.RawMessage
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &rawElements); err != nil {
+			// Report error if we have an unmarshal processor
+			for _, p := range w.processors {
+				if up, ok := p.(*UnmarshalProcessor); ok {
+					up.Errors = append(up.Errors, ValidationError{
+						Loc:     []string{},
+						Message: "JSON unmarshal failed: " + err.Error(),
+						Type:    errors.ErrorTypeJSONDecode,
+					})
+					return nil
+				}
+			}
+		}
+	}
+
+	elemType := slice.Type().Elem()
+	isPointer := elemType.Kind() == reflect.Pointer
+	actualElemType := elemType
+	if isPointer {
+		actualElemType = actualElemType.Elem()
+	}
+
+	// Only walk if elements are structs
+	if actualElemType.Kind() != reflect.Struct {
+		// For primitive slices, just unmarshal directly
+		if len(data) > 0 {
+			json.Unmarshal(data, slice.Addr().Interface())
+		}
+		return nil
+	}
+
+	// Resize slice to match JSON array length
+	if slice.Len() != len(rawElements) {
+		newSlice := reflect.MakeSlice(slice.Type(), len(rawElements), len(rawElements))
+		slice.Set(newSlice)
+	}
+
+	// Initialize and walk each element
+	for i, rawElem := range rawElements {
+		elemVal := slice.Index(i)
+
+		// Initialize pointer elements
+		if isPointer {
+			if elemVal.IsNil() {
+				elemVal.Set(reflect.New(actualElemType))
+			}
+			elemVal = elemVal.Elem()
+		}
+
+		// Parse element JSON
+		var rawFields map[string]json.RawMessage
+		if len(rawElem) > 0 {
+			json.Unmarshal(rawElem, &rawFields)
+		}
+
+		elemPath := appendPathIndex([]string{}, i)
+		if err := w.walkStruct(elemVal, rawFields, elemPath, true); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // walkStruct walks a struct value and its fields.

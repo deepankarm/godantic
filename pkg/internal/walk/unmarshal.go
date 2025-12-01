@@ -61,7 +61,7 @@ func (p *UnmarshalProcessor) unmarshalRegular(ctx *FieldContext) error {
 	if err := json.Unmarshal(ctx.RawJSON, fieldPtr.Interface()); err != nil {
 		p.Errors = append(p.Errors, ValidationError{
 			Loc:     ctx.Path,
-			Message: fmt.Sprintf("json unmarshal failed: %v", err),
+			Message: fmt.Sprintf("JSON unmarshal failed: %v", err),
 			Type:    errors.ErrorTypeJSONDecode,
 		})
 	}

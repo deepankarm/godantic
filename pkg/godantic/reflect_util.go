@@ -30,6 +30,10 @@ func (fs *fieldScanner) scanFieldOptionsFromType(typ reflect.Type) map[string]*f
 
 	// Second, check each struct field for type-level validation
 	// Only if parent struct didn't define Field{Name}() method
+	// Skip if not a struct (e.g., slice, map, etc.)
+	if typ.Kind() != reflect.Struct {
+		return fieldOptions
+	}
 	for i := 0; i < typ.NumField(); i++ {
 		structField := typ.Field(i)
 		fieldName := structField.Name

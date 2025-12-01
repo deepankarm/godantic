@@ -1,286 +1,127 @@
 package godantic_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
 )
 
-// Test slices of native types
-type Article struct {
-	Title    string
-	Tags     []string
-	Scores   []int
-	Keywords []string
-}
-
-func (a *Article) FieldTitle() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-func (a *Article) FieldTags() godantic.FieldOptions[[]string] {
-	return godantic.Field(
-		godantic.Required[[]string](),
-		godantic.Validate(func(tags []string) error {
-			if len(tags) < 1 {
-				return fmt.Errorf("must have at least 1 tag")
-			}
-			if len(tags) > 10 {
-				return fmt.Errorf("cannot have more than 10 tags")
-			}
-			return nil
-		}),
-	)
-}
-
-func (a *Article) FieldScores() godantic.FieldOptions[[]int] {
-	return godantic.Field(
-		godantic.Validate(func(scores []int) error {
-			for i, score := range scores {
-				if score < 0 || score > 100 {
-					return fmt.Errorf("score at index %d must be between 0 and 100", i)
-				}
-			}
-			return nil
-		}),
-	)
-}
-
-func (a *Article) FieldKeywords() godantic.FieldOptions[[]string] {
-	return godantic.Field(
-		godantic.Validate(func(keywords []string) error {
-			// Check for unique keywords
-			seen := make(map[string]bool)
-			for _, keyword := range keywords {
-				if seen[keyword] {
-					return fmt.Errorf("duplicate keyword: %s", keyword)
-				}
-				seen[keyword] = true
-			}
-			return nil
-		}),
-	)
-}
-
 func TestSlicesOfNativeTypes(t *testing.T) {
-	validator := godantic.NewValidator[Article]()
+	validator := godantic.NewValidator[TArticle]()
 
-	t.Run("valid article with tags should pass", func(t *testing.T) {
-		article := Article{
-			Title:    "Test Article",
-			Tags:     []string{"go", "testing", "validation"},
-			Scores:   []int{85, 90, 95},
-			Keywords: []string{"golang", "pydantic", "validation"},
-		}
-		errs := validator.Validate(&article)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
-
-	t.Run("empty tags should fail", func(t *testing.T) {
-		article := Article{
-			Title: "Test Article",
-			Tags:  []string{},
-		}
-		errs := validator.Validate(&article)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Tags: must have at least 1 tag" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-
-	t.Run("too many tags should fail", func(t *testing.T) {
-		article := Article{
-			Title: "Test Article",
-			Tags:  []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"},
-		}
-		errs := validator.Validate(&article)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Tags: cannot have more than 10 tags" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-
-	t.Run("invalid score should fail", func(t *testing.T) {
-		article := Article{
-			Title:  "Test Article",
-			Tags:   []string{"go"},
-			Scores: []int{85, 150, 95}, // 150 is invalid
-		}
-		errs := validator.Validate(&article)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Scores: score at index 1 must be between 0 and 100" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-
-	t.Run("duplicate keywords should fail", func(t *testing.T) {
-		article := Article{
-			Title:    "Test Article",
-			Tags:     []string{"go"},
-			Keywords: []string{"golang", "testing", "golang"}, // duplicate
-		}
-		errs := validator.Validate(&article)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Keywords: duplicate keyword: golang" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-}
-
-// Test slices of structs
-type Contact struct {
-	Name  string
-	Email string
-}
-
-type Company struct {
-	Name     string
-	Contacts []Contact
-}
-
-func (c *Company) FieldName() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-func (c *Company) FieldContacts() godantic.FieldOptions[[]Contact] {
-	return godantic.Field(
-		godantic.Required[[]Contact](),
-		godantic.Validate(func(contacts []Contact) error {
-			if len(contacts) < 1 {
-				return fmt.Errorf("must have at least 1 contact")
-			}
-			// Validate each contact
-			for i, contact := range contacts {
-				if contact.Name == "" {
-					return fmt.Errorf("contact at index %d must have a name", i)
-				}
-				if contact.Email == "" {
-					return fmt.Errorf("contact at index %d must have an email", i)
-				}
-			}
-			return nil
-		}),
-	)
-}
-
-func TestSlicesOfStructs(t *testing.T) {
-	validator := godantic.NewValidator[Company]()
-
-	t.Run("valid company with contacts should pass", func(t *testing.T) {
-		company := Company{
-			Name: "Tech Corp",
-			Contacts: []Contact{
-				{Name: "Alice", Email: "alice@example.com"},
-				{Name: "Bob", Email: "bob@example.com"},
+	tests := []struct {
+		name         string
+		article      TArticle
+		wantErrCount int
+		wantErrMsg   string
+	}{
+		{
+			name: "valid article with tags should pass",
+			article: TArticle{
+				Title:    "Test Article",
+				Tags:     []string{"go", "testing", "validation"},
+				Scores:   []int{85, 90, 95},
+				Keywords: []string{"golang", "pydantic", "validation"},
 			},
-		}
-		errs := validator.Validate(&company)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
-
-	t.Run("empty contacts should fail", func(t *testing.T) {
-		company := Company{
-			Name:     "Tech Corp",
-			Contacts: []Contact{},
-		}
-		errs := validator.Validate(&company)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Contacts: must have at least 1 contact" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-
-	t.Run("contact with empty name should fail", func(t *testing.T) {
-		company := Company{
-			Name: "Tech Corp",
-			Contacts: []Contact{
-				{Name: "", Email: "alice@example.com"},
+			wantErrCount: 0,
+		},
+		{
+			name: "empty tags should fail",
+			article: TArticle{
+				Title: "Test Article",
+				Tags:  []string{},
 			},
-		}
-		errs := validator.Validate(&company)
-		if len(errs) != 1 {
-			t.Errorf("expected 1 error, got %d", len(errs))
-		}
-		if errs[0].Error() != "Contacts: contact at index 0 must have a name" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
-}
+			wantErrCount: 1,
+			wantErrMsg:   "Tags: must have at least 1 tag",
+		},
+		{
+			name: "too many tags should fail",
+			article: TArticle{
+				Title: "Test Article",
+				Tags:  []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"},
+			},
+			wantErrCount: 1,
+			wantErrMsg:   "Tags: cannot have more than 10 tags",
+		},
+		{
+			name: "invalid score should fail",
+			article: TArticle{
+				Title:  "Test Article",
+				Tags:   []string{"go"},
+				Scores: []int{85, 150, 95},
+			},
+			wantErrCount: 1,
+			wantErrMsg:   "Scores: score at index 1 must be between 0 and 100",
+		},
+		{
+			name: "duplicate keywords should fail",
+			article: TArticle{
+				Title:    "Test Article",
+				Tags:     []string{"go"},
+				Keywords: []string{"golang", "testing", "golang"},
+			},
+			wantErrCount: 1,
+			wantErrMsg:   "Keywords: duplicate keyword: golang",
+		},
+	}
 
-// Test automatic validation of slice elements with Field methods
-type Employee struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-func (e *Employee) FieldName() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-func (e *Employee) FieldEmail() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-type Organization struct {
-	Name      string     `json:"name"`
-	Employees []Employee `json:"employees"`
-}
-
-func (o *Organization) FieldName() godantic.FieldOptions[string] {
-	return godantic.Field(godantic.Required[string]())
-}
-
-func (o *Organization) FieldEmployees() godantic.FieldOptions[[]Employee] {
-	return godantic.Field(godantic.Required[[]Employee]())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validator.Validate(&tt.article)
+			if len(errs) != tt.wantErrCount {
+				t.Errorf("got %d errors, want %d: %v", len(errs), tt.wantErrCount, errs)
+			}
+			if tt.wantErrMsg != "" && len(errs) > 0 && errs[0].Error() != tt.wantErrMsg {
+				t.Errorf("got error %q, want %q", errs[0].Error(), tt.wantErrMsg)
+			}
+		})
+	}
 }
 
 func TestSlicesOfStructsWithFieldMethods(t *testing.T) {
-	validator := godantic.NewValidator[Organization]()
+	validator := godantic.NewValidator[TOrganization]()
 
-	t.Run("valid organization with employees should pass", func(t *testing.T) {
-		org := Organization{
-			Name: "Tech Corp",
-			Employees: []Employee{
-				{Name: "Alice", Email: "alice@example.com"},
-				{Name: "Bob", Email: "bob@example.com"},
+	tests := []struct {
+		name         string
+		org          TOrganization
+		wantErrCount int
+		wantErrMsg   string
+	}{
+		{
+			name: "valid organization with employees should pass",
+			org: TOrganization{
+				Name: "Tech Corp",
+				Employees: []TEmployee{
+					{Name: "Alice", Email: "alice@example.com"},
+					{Name: "Bob", Email: "bob@example.com"},
+				},
 			},
-		}
-		errs := validator.Validate(&org)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors, got %d: %v", len(errs), errs)
-		}
-	})
+			wantErrCount: 0,
+		},
+		{
+			name: "employee with missing name should fail",
+			org: TOrganization{
+				Name: "Tech Corp",
+				Employees: []TEmployee{
+					{Name: "", Email: "alice@example.com"},
+				},
+			},
+			wantErrCount: 1,
+			wantErrMsg:   "Employees.[0].Name: required field",
+		},
+	}
 
-	t.Run("employee with missing name should fail", func(t *testing.T) {
-		org := Organization{
-			Name: "Tech Corp",
-			Employees: []Employee{
-				{Name: "", Email: "alice@example.com"}, // Missing required Name
-			},
-		}
-		errs := validator.Validate(&org)
-		if len(errs) != 1 {
-			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
-		}
-		if errs[0].Error() != "Employees.[0].Name: required field" {
-			t.Errorf("unexpected error: %v", errs[0])
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validator.Validate(&tt.org)
+			if len(errs) != tt.wantErrCount {
+				t.Fatalf("got %d errors, want %d: %v", len(errs), tt.wantErrCount, errs)
+			}
+			if tt.wantErrMsg != "" && len(errs) > 0 && errs[0].Error() != tt.wantErrMsg {
+				t.Errorf("got error %q, want %q", errs[0].Error(), tt.wantErrMsg)
+			}
+		})
+	}
 
 	t.Run("unmarshal JSON with missing employee email should fail", func(t *testing.T) {
 		jsonStr := `{
@@ -293,10 +134,278 @@ func TestSlicesOfStructsWithFieldMethods(t *testing.T) {
 
 		_, errs := validator.Unmarshal([]byte(jsonStr))
 		if len(errs) != 1 {
-			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+			t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
 		}
 		if errs[0].Error() != "Employees.[1].Email: required field" {
-			t.Errorf("unexpected error: %v", errs[0])
+			t.Errorf("got error %q, want %q", errs[0].Error(), "Employees.[1].Email: required field")
+		}
+	})
+}
+
+func TestRootSliceUnmarshal(t *testing.T) {
+	validator := godantic.NewValidator[[]TUser]()
+
+	tests := []struct {
+		name         string
+		jsonStr      string
+		wantErrCount int
+		wantErrMsg   string
+		wantErrType  godantic.ErrorType
+		validate     func(*testing.T, *[]TUser)
+	}{
+		{
+			name:    "valid root slice should pass",
+			jsonStr: `[{"name": "Alice", "email": "alice@example.com", "age": 30}, {"name": "Bob", "email": "bob@example.com", "age": 25}]`,
+			validate: func(t *testing.T, people *[]TUser) {
+				if len(*people) != 2 {
+					t.Errorf("got %d people, want 2", len(*people))
+				}
+				if (*people)[0].Name != "Alice" {
+					t.Errorf("got first name %q, want 'Alice'", (*people)[0].Name)
+				}
+				if (*people)[1].Age != 25 {
+					t.Errorf("got second age %d, want 25", (*people)[1].Age)
+				}
+			},
+		},
+		{
+			name:         "missing required field should fail with correct path",
+			jsonStr:      `[{"name": "Alice", "email": "alice@example.com", "age": 30}, {"email": "bob@example.com", "age": 25}]`,
+			wantErrCount: 1,
+			wantErrMsg:   "[1].Name: required field",
+		},
+		{
+			name:         "validation error should have correct path",
+			jsonStr:      `[{"name": "Alice", "email": "alice@example.com", "age": 30}, {"name": "Bob", "email": "bob@example.com", "age": 200}]`,
+			wantErrCount: 1,
+			wantErrMsg:   "[1].Age: age must be between 0 and 150",
+		},
+		{
+			name:         "invalid JSON should fail",
+			jsonStr:      `not valid json`,
+			wantErrCount: 1,
+			wantErrType:  godantic.ErrorTypeJSONDecode,
+		},
+		{
+			name:    "empty array should pass",
+			jsonStr: `[]`,
+			validate: func(t *testing.T, people *[]TUser) {
+				if len(*people) != 0 {
+					t.Errorf("got %d elements, want 0", len(*people))
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			people, errs := validator.Unmarshal([]byte(tt.jsonStr))
+			if len(errs) != tt.wantErrCount {
+				t.Fatalf("got %d errors, want %d: %v", len(errs), tt.wantErrCount, errs)
+			}
+			if tt.wantErrMsg != "" && len(errs) > 0 && errs[0].Error() != tt.wantErrMsg {
+				t.Errorf("got error %q, want %q", errs[0].Error(), tt.wantErrMsg)
+			}
+			if tt.wantErrType != "" && len(errs) > 0 && errs[0].Type != tt.wantErrType {
+				t.Errorf("got error type %q, want %q", errs[0].Type, tt.wantErrType)
+			}
+			if tt.validate != nil {
+				tt.validate(t, people)
+			}
+		})
+	}
+
+	t.Run("multiple elements with errors", func(t *testing.T) {
+		jsonStr := `[
+			{"email": "alice@example.com", "age": 30},
+			{"name": "Bob", "email": "bob@example.com", "age": 200},
+			{"name": "Charlie", "email": "charlie@example.com"}
+		]`
+
+		_, errs := validator.Unmarshal([]byte(jsonStr))
+		if len(errs) != 3 {
+			t.Fatalf("got %d errors, want 3: %v", len(errs), errs)
+		}
+		expectedErrors := map[string]bool{
+			"[0].Name: required field":               true,
+			"[1].Age: age must be between 0 and 150": true,
+			"[2].Age: required field":                true,
+		}
+		for _, err := range errs {
+			if !expectedErrors[err.Error()] {
+				t.Errorf("unexpected error: %v", err)
+			}
+		}
+	})
+}
+
+func TestRootSliceWithBeforeValidateHook(t *testing.T) {
+	validator := godantic.NewValidator[[]TMessage]()
+
+	tests := []struct {
+		name         string
+		jsonStr      string
+		wantErrCount int
+		wantErrMsgs  map[string]bool
+		validate     func(*testing.T, *[]TMessage)
+	}{
+		{
+			name:    "hook should transform each element",
+			jsonStr: `[{"type": "text", "text": "Hello"}, {"content": "World"}]`,
+			validate: func(t *testing.T, messages *[]TMessage) {
+				if len(*messages) != 2 {
+					t.Fatalf("got %d messages, want 2", len(*messages))
+				}
+				if (*messages)[0].Text != "Hello" {
+					t.Errorf("got first text %q, want 'Hello'", (*messages)[0].Text)
+				}
+				if (*messages)[1].Type != "text" {
+					t.Errorf("got second type %q, want 'text'", (*messages)[1].Type)
+				}
+				if (*messages)[1].Text != "World" {
+					t.Errorf("got second text %q, want 'World'", (*messages)[1].Text)
+				}
+			},
+		},
+		{
+			name:         "validation after hook transformation",
+			jsonStr:      `[{"content": "Valid"}, {"invalid": "data"}]`,
+			wantErrCount: 2,
+			wantErrMsgs: map[string]bool{
+				"[1].Type: required field": true,
+				"[1].Text: required field": true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages, errs := validator.Unmarshal([]byte(tt.jsonStr))
+			if len(errs) != tt.wantErrCount {
+				t.Fatalf("got %d errors, want %d: %v", len(errs), tt.wantErrCount, errs)
+			}
+			if tt.wantErrMsgs != nil {
+				errorMessages := make(map[string]bool)
+				for _, err := range errs {
+					errorMessages[err.Error()] = true
+				}
+				for wantMsg := range tt.wantErrMsgs {
+					if !errorMessages[wantMsg] {
+						t.Errorf("missing expected error: %q", wantMsg)
+					}
+				}
+			}
+			if tt.validate != nil {
+				tt.validate(t, messages)
+			}
+		})
+	}
+}
+
+func TestRootSliceWithPointerElements(t *testing.T) {
+	validator := godantic.NewValidator[[]*TUser]()
+
+	tests := []struct {
+		name         string
+		jsonStr      string
+		wantErrCount int
+		wantErrMsg   string
+		validate     func(*testing.T, *[]*TUser)
+	}{
+		{
+			name:    "unmarshal pointer slice",
+			jsonStr: `[{"name": "Alice", "email": "alice@example.com", "age": 30}, {"name": "Bob", "email": "bob@example.com", "age": 25}]`,
+			validate: func(t *testing.T, users *[]*TUser) {
+				if len(*users) != 2 {
+					t.Fatalf("got %d users, want 2", len(*users))
+				}
+				if (*users)[0].Name != "Alice" {
+					t.Errorf("got first name %q, want 'Alice'", (*users)[0].Name)
+				}
+			},
+		},
+		{
+			name:         "validation error with pointer elements",
+			jsonStr:      `[{"name": "Alice", "email": "alice@example.com", "age": 30}, {"email": "bob@example.com", "age": 25}]`,
+			wantErrCount: 1,
+			wantErrMsg:   "[1].Name: required field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users, errs := validator.Unmarshal([]byte(tt.jsonStr))
+			if len(errs) != tt.wantErrCount {
+				t.Fatalf("got %d errors, want %d: %v", len(errs), tt.wantErrCount, errs)
+			}
+			if tt.wantErrMsg != "" && len(errs) > 0 && errs[0].Error() != tt.wantErrMsg {
+				t.Errorf("got error %q, want %q", errs[0].Error(), tt.wantErrMsg)
+			}
+			if tt.validate != nil {
+				tt.validate(t, users)
+			}
+		})
+	}
+}
+
+func TestRootSlicePrimitiveTypes(t *testing.T) {
+	t.Run("unmarshal string slice", func(t *testing.T) {
+		validator := godantic.NewValidator[[]string]()
+		jsonStr := `["apple", "banana", "cherry"]`
+
+		fruits, errs := validator.Unmarshal([]byte(jsonStr))
+		if len(errs) != 0 {
+			t.Fatalf("got %d errors, want 0: %v", len(errs), errs)
+		}
+		if len(*fruits) != 3 {
+			t.Errorf("got %d items, want 3", len(*fruits))
+		}
+		if (*fruits)[0] != "apple" {
+			t.Errorf("got first item %q, want 'apple'", (*fruits)[0])
+		}
+	})
+
+	t.Run("unmarshal int slice", func(t *testing.T) {
+		validator := godantic.NewValidator[[]int]()
+		jsonStr := `[1, 2, 3, 4, 5]`
+
+		nums, errs := validator.Unmarshal([]byte(jsonStr))
+		if len(errs) != 0 {
+			t.Fatalf("got %d errors, want 0: %v", len(errs), errs)
+		}
+		if len(*nums) != 5 {
+			t.Errorf("got %d items, want 5", len(*nums))
+		}
+		if (*nums)[2] != 3 {
+			t.Errorf("got third item %d, want 3", (*nums)[2])
+		}
+	})
+}
+
+func TestRootSliceHookErrors(t *testing.T) {
+	t.Run("multiple hook errors should be prefixed with indices", func(t *testing.T) {
+		validator := godantic.NewValidator[[]TMessage]()
+		// Second element missing both required fields after hook runs
+		jsonStr := `[
+			{"type": "text", "text": "valid"},
+			{"unknown": "field"}
+		]`
+
+		_, errs := validator.Unmarshal([]byte(jsonStr))
+		if len(errs) == 0 {
+			t.Fatal("expected validation errors, got none")
+		}
+
+		// Check that errors are properly indexed
+		hasIndexedError := false
+		for _, err := range errs {
+			if len(err.Loc) > 0 && (err.Loc[0] == "[1]" || err.Loc[0] == "[0]") {
+				hasIndexedError = true
+				break
+			}
+		}
+		if !hasIndexedError {
+			t.Errorf("expected errors with array index prefix, got: %v", errs)
 		}
 	})
 }

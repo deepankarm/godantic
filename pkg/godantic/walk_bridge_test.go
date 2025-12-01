@@ -94,6 +94,75 @@ func TestStructPathToJSONPath(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// prefixErrors Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+func TestPrefixErrors(t *testing.T) {
+	t.Run("prefix single error", func(t *testing.T) {
+		errs := ValidationErrors{
+			{Loc: []string{"Name"}, Message: "required field", Type: "required"},
+		}
+
+		result := prefixErrors(errs, "[0]")
+		if len(result) != 1 {
+			t.Fatalf("expected 1 error, got %d", len(result))
+		}
+		if len(result[0].Loc) != 2 {
+			t.Fatalf("expected 2 path segments, got %d", len(result[0].Loc))
+		}
+		if result[0].Loc[0] != "[0]" {
+			t.Errorf("expected first segment '[0]', got '%s'", result[0].Loc[0])
+		}
+		if result[0].Loc[1] != "Name" {
+			t.Errorf("expected second segment 'Name', got '%s'", result[0].Loc[1])
+		}
+		if result[0].Message != "required field" {
+			t.Errorf("message should be preserved, got '%s'", result[0].Message)
+		}
+	})
+
+	t.Run("prefix multiple errors", func(t *testing.T) {
+		errs := ValidationErrors{
+			{Loc: []string{"Name"}, Message: "required", Type: "required"},
+			{Loc: []string{"Age"}, Message: "min", Type: "constraint"},
+			{Loc: []string{"Email"}, Message: "invalid", Type: "validation"},
+		}
+
+		result := prefixErrors(errs, "[2]")
+		if len(result) != 3 {
+			t.Fatalf("expected 3 errors, got %d", len(result))
+		}
+		for i, err := range result {
+			if err.Loc[0] != "[2]" {
+				t.Errorf("error %d: expected prefix '[2]', got '%s'", i, err.Loc[0])
+			}
+		}
+	})
+
+	t.Run("prefix nested path", func(t *testing.T) {
+		errs := ValidationErrors{
+			{Loc: []string{"Address", "City"}, Message: "required", Type: "required"},
+		}
+
+		result := prefixErrors(errs, "[1]")
+		if len(result[0].Loc) != 3 {
+			t.Fatalf("expected 3 path segments, got %d: %v", len(result[0].Loc), result[0].Loc)
+		}
+		if result[0].Loc[0] != "[1]" || result[0].Loc[1] != "Address" || result[0].Loc[2] != "City" {
+			t.Errorf("unexpected path: %v", result[0].Loc)
+		}
+	})
+
+	t.Run("prefix empty error list", func(t *testing.T) {
+		errs := ValidationErrors{}
+		result := prefixErrors(errs, "[0]")
+		if len(result) != 0 {
+			t.Errorf("expected 0 errors, got %d", len(result))
+		}
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // filterIncompleteFieldErrors Tests
 // ═══════════════════════════════════════════════════════════════════════════
 

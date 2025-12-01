@@ -358,3 +358,195 @@ func TestDefaultsProcessor_DoesNotOverrideExisting(t *testing.T) {
 		t.Errorf("Name = %q, want %q (should not override)", user.Name, "John")
 	}
 }
+
+func TestWalker_RootSlice(t *testing.T) {
+	scanner := &mockScanner{
+		options: map[string]map[string]*FieldOptions{
+			"testUser": {
+				"Name": {Required: true},
+				"Age": {
+					Validators: []func(any) error{
+						func(v any) error {
+							age := v.(int)
+							if age < 0 || age > 150 {
+								return fmt.Errorf("age must be between 0 and 150")
+							}
+							return nil
+						},
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("unmarshal root slice with validation", func(t *testing.T) {
+		jsonData := []byte(`[{"Name":"Alice","Email":"alice@example.com","Age":30},{"Name":"Bob","Email":"bob@example.com","Age":25}]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, up, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(up.Errors) > 0 {
+			t.Fatalf("got unmarshal errors: %v", up.Errors)
+		}
+		if len(vp.Errors) > 0 {
+			t.Fatalf("got validation errors: %v", vp.Errors)
+		}
+
+		if len(slice) != 2 {
+			t.Fatalf("got %d elements, want 2", len(slice))
+		}
+		if slice[0].Name != "Alice" {
+			t.Errorf("got first name %q, want 'Alice'", slice[0].Name)
+		}
+		if slice[1].Age != 25 {
+			t.Errorf("got second age %d, want 25", slice[1].Age)
+		}
+	})
+
+	t.Run("root slice validation errors have correct paths", func(t *testing.T) {
+		jsonData := []byte(`[{"Email":"alice@example.com","Age":30},{"Name":"Bob","Email":"bob@example.com","Age":200}]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, up, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(vp.Errors) != 2 {
+			t.Fatalf("got %d validation errors, want 2: %v", len(vp.Errors), vp.Errors)
+		}
+
+		expectedPaths := map[string]bool{"[0].Name": true, "[1].Age": true}
+		for _, verr := range vp.Errors {
+			path := ""
+			if len(verr.Loc) > 0 {
+				path = verr.Loc[0]
+				if len(verr.Loc) > 1 {
+					path += "." + verr.Loc[1]
+				}
+			}
+			if !expectedPaths[path] {
+				t.Errorf("unexpected error path: %v", verr.Loc)
+			}
+		}
+	})
+
+	t.Run("root slice with pointer elements", func(t *testing.T) {
+		jsonData := []byte(`[{"Name":"Alice","Email":"alice@example.com","Age":30},{"Name":"Bob","Email":"bob@example.com","Age":25}]`)
+
+		slice := make([]*testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, up, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(slice) != 2 {
+			t.Fatalf("got %d elements, want 2", len(slice))
+		}
+		if slice[0] == nil {
+			t.Fatal("got nil first element, want non-nil")
+		}
+		if slice[0].Name != "Alice" {
+			t.Errorf("got first name %q, want 'Alice'", slice[0].Name)
+		}
+	})
+
+	t.Run("empty root slice", func(t *testing.T) {
+		jsonData := []byte(`[]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		walker := NewWalker(scanner, up)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(slice) != 0 {
+			t.Errorf("got %d elements, want 0", len(slice))
+		}
+	})
+
+	t.Run("root slice with primitive types", func(t *testing.T) {
+		jsonData := []byte(`["apple", "banana", "cherry"]`)
+
+		slice := make([]string, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		walker := NewWalker(scanner, up)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(slice) != 3 {
+			t.Errorf("got %d elements, want 3", len(slice))
+		}
+		if slice[0] != "apple" {
+			t.Errorf("got first element %q, want 'apple'", slice[0])
+		}
+	})
+
+	t.Run("root slice invalid JSON", func(t *testing.T) {
+		jsonData := []byte(`not valid json`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		walker := NewWalker(scanner, up)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(up.Errors) == 0 {
+			t.Fatal("want JSON decode error, got none")
+		}
+		if up.Errors[0].Type != "json_decode" {
+			t.Errorf("got error type %q, want 'json_decode'", up.Errors[0].Type)
+		}
+	})
+
+	t.Run("root slice without unmarshal processor", func(t *testing.T) {
+		jsonData := []byte(`[{"Name":"Alice","Email":"alice@example.com","Age":30}]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+	})
+}
