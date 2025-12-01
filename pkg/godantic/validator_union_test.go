@@ -8,7 +8,7 @@ import (
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Discriminated Union - Marshal (JSON → Struct)
+// Discriminated Union - Unmarshal (JSON → Struct)
 // Uses shared TAnimal, TCat, TDog, TBird fixtures from testdata_test.go
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -165,7 +165,7 @@ func TestUnion_Unmarshal_Validation(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Discriminated Union - Unmarshal (Struct → JSON)
+// Discriminated Union - Marshal (Struct → JSON)
 // ═══════════════════════════════════════════════════════════════════════════
 
 func TestUnion_Marshal(t *testing.T) {
