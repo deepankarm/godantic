@@ -6,10 +6,15 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 )
+
+func init() {
+	register.Plugin("godanticlint", New)
+}
 
 // Analyzer is the main analyzer that checks Field{X}() methods correspond to struct fields
 var Analyzer = &analysis.Analyzer{
@@ -17,6 +22,24 @@ var Analyzer = &analysis.Analyzer{
 	Doc:      "checks that Field{X}() methods correspond to actual struct fields",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+}
+
+// Plugin implements the golangci-lint plugin interface
+type Plugin struct{}
+
+// New creates a new plugin instance for golangci-lint
+func New(_ any) (register.LinterPlugin, error) {
+	return &Plugin{}, nil
+}
+
+// BuildAnalyzers returns the analyzers for this plugin
+func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
+	return []*analysis.Analyzer{Analyzer}, nil
+}
+
+// GetLoadMode returns the load mode for this plugin
+func (p *Plugin) GetLoadMode() string {
+	return register.LoadModeTypesInfo
 }
 
 func run(pass *analysis.Pass) (any, error) {
