@@ -132,11 +132,7 @@ func (w *Walker) Walk(val reflect.Value, data []byte) error {
 // If data is nil/empty, it walks existing slice elements (for validation/marshaling).
 func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
 	elemType := slice.Type().Elem()
-	isPointer := elemType.Kind() == reflect.Pointer
-	actualElemType := elemType
-	if isPointer {
-		actualElemType = actualElemType.Elem()
-	}
+	actualElemType, isPointer := reflectutil.UnwrapPointerInfo(elemType)
 
 	// Only walk if elements are structs
 	if actualElemType.Kind() != reflect.Struct {

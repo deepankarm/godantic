@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/deepankarm/godantic/pkg/internal/errors"
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 )
 
 // Re-exported types from internal/errors for public API.
@@ -206,10 +207,7 @@ func (v *Validator[T]) transformSliceHooks(objPtr reflect.Value, data []byte) ([
 		}}
 	}
 
-	elemType := objPtr.Elem().Type().Elem()
-	if elemType.Kind() == reflect.Pointer {
-		elemType = elemType.Elem()
-	}
+	elemType := reflectutil.UnwrapPointer(objPtr.Elem().Type().Elem())
 
 	var allErrs ValidationErrors
 	for i, rawData := range rawElements {

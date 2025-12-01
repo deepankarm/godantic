@@ -59,9 +59,7 @@ func FieldByJSONName(val reflect.Value, typ reflect.Type, jsonName string) refle
 // FieldByGoName finds a struct field by Go field name and returns its JSON name.
 // Returns the default name if field not found.
 func GoFieldToJSONName(typ reflect.Type, goFieldName string) string {
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ = UnwrapPointer(typ)
 
 	// Try direct field
 	if field, ok := typ.FieldByName(goFieldName); ok {
@@ -69,7 +67,7 @@ func GoFieldToJSONName(typ reflect.Type, goFieldName string) string {
 	}
 
 	// Try embedded structs
-	for i := 0; i < typ.NumField(); i++ {
+	for i := range typ.NumField() {
 		field := typ.Field(i)
 		if field.Anonymous && field.Type.Kind() == reflect.Struct {
 			if embField, ok := field.Type.FieldByName(goFieldName); ok {

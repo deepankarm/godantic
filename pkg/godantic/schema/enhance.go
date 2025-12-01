@@ -19,9 +19,7 @@ func (g *Generator[T]) enhance(schema *jsonschema.Schema) {
 // enhanceSchema is the unified enhancement function used by both Generator[T] and GenerateForType
 // It handles all schema enhancement including union variants and field options
 func enhanceSchema(schema *jsonschema.Schema, reflector *jsonschema.Reflector, rootType reflect.Type, opts SchemaOptions) {
-	if rootType.Kind() == reflect.Pointer {
-		rootType = rootType.Elem()
-	}
+	rootType = reflectutil.UnwrapPointer(rootType)
 
 	if rootType.Kind() != reflect.Struct {
 		return
@@ -105,9 +103,7 @@ func findVariantTypeByName(defName string, structTypes map[string]reflect.Type) 
 					for _, variant := range mapping {
 						variantType := reflect.TypeOf(variant)
 						if variantType != nil {
-							if variantType.Kind() == reflect.Pointer {
-								variantType = variantType.Elem()
-							}
+							variantType = reflectutil.UnwrapPointer(variantType)
 							if variantType.Name() == defName {
 								return variantType
 							}

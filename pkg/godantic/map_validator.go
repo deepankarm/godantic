@@ -4,16 +4,15 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
+
+	"github.com/deepankarm/godantic/pkg/internal/reflectutil"
 )
 
 // ValidateFromStringMap validates data from a map[string]string (for path params, cookies)
 // Converts string values to appropriate Go types based on struct field types
 func (v *Validator[T]) ValidateFromStringMap(data map[string]string) (*T, ValidationErrors) {
 	var zero T
-	typ := reflect.TypeOf(zero)
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ := reflectutil.UnwrapPointer(reflect.TypeOf(zero))
 
 	// Map JSON field names to struct field types
 	fieldTypes := make(map[string]reflect.Type)
@@ -59,10 +58,7 @@ func (v *Validator[T]) ValidateFromStringMap(data map[string]string) (*T, Valida
 // Converts string values to appropriate Go types based on struct field types
 func (v *Validator[T]) ValidateFromMultiValueMap(data map[string][]string) (*T, ValidationErrors) {
 	var zero T
-	typ := reflect.TypeOf(zero)
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ := reflectutil.UnwrapPointer(reflect.TypeOf(zero))
 
 	// Map JSON field names to struct field types
 	fieldTypes := make(map[string]reflect.Type)

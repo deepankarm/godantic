@@ -17,9 +17,7 @@ type walkScanner struct {
 
 // ScanFieldOptions implements walk.FieldScanner with caching.
 func (s *walkScanner) ScanFieldOptions(t reflect.Type) map[string]*walk.FieldOptions {
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
+	t = reflectutil.UnwrapPointer(t)
 
 	// Check cache first
 	if cached, ok := s.cache.Load(t); ok {
@@ -169,10 +167,7 @@ func structPathToJSONPath(structPath []string, typ reflect.Type) string {
 		return ""
 	}
 
-	// Unwrap pointer types
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ = reflectutil.UnwrapPointer(typ)
 
 	var result string
 	currentType := typ
@@ -204,10 +199,7 @@ func structPathToJSONPath(structPath []string, typ reflect.Type) string {
 		// Update current type for nested fields
 		if currentType.Kind() == reflect.Struct {
 			if field, ok := currentType.FieldByName(fieldName); ok {
-				currentType = field.Type
-				if currentType.Kind() == reflect.Pointer {
-					currentType = currentType.Elem()
-				}
+				currentType = reflectutil.UnwrapPointer(field.Type)
 			}
 		}
 	}
