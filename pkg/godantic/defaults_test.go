@@ -268,7 +268,7 @@ func TestUnmarshal_ConvenienceMethod(t *testing.T) {
 		}
 
 		errMsg := errs[0].Error()
-		if !contains(errMsg, "json unmarshal failed") {
+		if !contains(errMsg, "JSON unmarshal failed") {
 			t.Errorf("expected JSON unmarshal error, got: %v", errMsg)
 		}
 	})

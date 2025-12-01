@@ -79,6 +79,19 @@ func walkParse(objPtr reflect.Value, data []byte) ValidationErrors {
 	return w.Errors()
 }
 
+// prefixErrors prepends a path segment to all error locations.
+func prefixErrors(errs ValidationErrors, prefix string) ValidationErrors {
+	result := make(ValidationErrors, len(errs))
+	for i, e := range errs {
+		result[i] = ValidationError{
+			Loc:     append([]string{prefix}, e.Loc...),
+			Message: e.Message,
+			Type:    e.Type,
+		}
+	}
+	return result
+}
+
 // walkParsePartial unmarshals potentially incomplete JSON, applies defaults, and validates.
 // Returns the result with incomplete field paths tracked.
 func walkParsePartial(objPtr reflect.Value, data []byte) (*PartialUnmarshalResult, ValidationErrors) {

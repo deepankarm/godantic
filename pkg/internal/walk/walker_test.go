@@ -358,3 +358,149 @@ func TestDefaultsProcessor_DoesNotOverrideExisting(t *testing.T) {
 		t.Errorf("Name = %q, want %q (should not override)", user.Name, "John")
 	}
 }
+
+func TestWalker_RootSlice(t *testing.T) {
+	scanner := &mockScanner{
+		options: map[string]map[string]*FieldOptions{
+			"testUser": {
+				"Name": {Required: true},
+				"Age": {
+					Validators: []func(any) error{
+						func(v any) error {
+							age := v.(int)
+							if age < 0 || age > 150 {
+								return fmt.Errorf("age must be between 0 and 150")
+							}
+							return nil
+						},
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("unmarshal root slice with validation", func(t *testing.T) {
+		jsonData := []byte(`[
+			{"Name":"Alice","Email":"alice@example.com","Age":30},
+			{"Name":"Bob","Email":"bob@example.com","Age":25}
+		]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, up, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(up.Errors) > 0 {
+			t.Fatalf("Unmarshal errors: %v", up.Errors)
+		}
+		if len(vp.Errors) > 0 {
+			t.Fatalf("Validation errors: %v", vp.Errors)
+		}
+
+		if len(slice) != 2 {
+			t.Fatalf("Expected 2 elements, got %d", len(slice))
+		}
+		if slice[0].Name != "Alice" {
+			t.Errorf("Expected first name 'Alice', got '%s'", slice[0].Name)
+		}
+		if slice[1].Age != 25 {
+			t.Errorf("Expected second age 25, got %d", slice[1].Age)
+		}
+	})
+
+	t.Run("root slice validation errors have correct paths", func(t *testing.T) {
+		jsonData := []byte(`[
+			{"Email":"alice@example.com","Age":30},
+			{"Name":"Bob","Email":"bob@example.com","Age":200}
+		]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, up, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(vp.Errors) != 2 {
+			t.Fatalf("Expected 2 validation errors, got %d: %v", len(vp.Errors), vp.Errors)
+		}
+
+		// Check error paths include array indices
+		expectedPaths := map[string]bool{
+			"[0].Name": true, // Missing required Name
+			"[1].Age":  true, // Invalid age
+		}
+		for _, verr := range vp.Errors {
+			path := ""
+			if len(verr.Loc) > 0 {
+				path = verr.Loc[0]
+				if len(verr.Loc) > 1 {
+					path += "." + verr.Loc[1]
+				}
+			}
+			if !expectedPaths[path] {
+				t.Errorf("Unexpected error path: %v (full error: %v)", verr.Loc, verr)
+			}
+		}
+	})
+
+	t.Run("root slice with pointer elements", func(t *testing.T) {
+		jsonData := []byte(`[
+			{"Name":"Alice","Email":"alice@example.com","Age":30},
+			{"Name":"Bob","Email":"bob@example.com","Age":25}
+		]`)
+
+		slice := make([]*testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		vp := NewValidateProcessor()
+		walker := NewWalker(scanner, up, vp)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(slice) != 2 {
+			t.Fatalf("Expected 2 elements, got %d", len(slice))
+		}
+		if slice[0] == nil {
+			t.Fatal("Expected non-nil first element")
+		}
+		if slice[0].Name != "Alice" {
+			t.Errorf("Expected first name 'Alice', got '%s'", slice[0].Name)
+		}
+	})
+
+	t.Run("empty root slice", func(t *testing.T) {
+		jsonData := []byte(`[]`)
+
+		slice := make([]testUser, 0)
+		sliceVal := reflect.ValueOf(&slice).Elem()
+
+		up := NewUnmarshalProcessor()
+		walker := NewWalker(scanner, up)
+
+		err := walker.Walk(sliceVal, jsonData)
+		if err != nil {
+			t.Fatalf("Walk returned error: %v", err)
+		}
+
+		if len(slice) != 0 {
+			t.Errorf("Expected empty slice, got %d elements", len(slice))
+		}
+	})
+}

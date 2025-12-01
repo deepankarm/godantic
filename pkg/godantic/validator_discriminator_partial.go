@@ -49,7 +49,7 @@ func (v *Validator[T]) unmarshalPartialDiscriminatedUnion(data []byte, cfg *disc
 func newUnionFromJSONPartial[T any](repairedData []byte, cfg *discriminatorConfig, incompletePaths [][]string) (*unionInstance[T], ValidationErrors) {
 	var peek map[string]any
 	if err := json.Unmarshal(repairedData, &peek); err != nil {
-		return nil, ValidationErrors{{Message: fmt.Sprintf("json unmarshal failed: %v", err), Type: ErrorTypeJSONDecode}}
+		return nil, ValidationErrors{{Message: fmt.Sprintf("JSON unmarshal failed: %v", err), Type: ErrorTypeJSONDecode}}
 	}
 
 	// Check if discriminator field is incomplete

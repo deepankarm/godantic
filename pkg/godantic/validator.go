@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/deepankarm/godantic/pkg/internal/errors"
 )
@@ -154,8 +155,13 @@ func (v *Validator[T]) Unmarshal(data []byte) (*T, ValidationErrors) {
 	var obj T
 	objPtr := reflect.New(reflect.TypeOf(obj))
 
-	// BeforeValidate hook: transform JSON before unmarshaling
-	data, hookErrs := applyBeforeValidateHook[[]byte](objPtr, data)
+	// Apply BeforeValidate hooks - for slices, apply per element
+	var hookErrs ValidationErrors
+	if objPtr.Elem().Kind() == reflect.Slice {
+		data, hookErrs = v.transformSliceHooks(objPtr, data)
+	} else {
+		data, hookErrs = applyBeforeValidateHook[[]byte](objPtr, data)
+	}
 	if hookErrs != nil {
 		return nil, hookErrs
 	}
@@ -186,6 +192,43 @@ func (v *Validator[T]) Unmarshal(data []byte) (*T, ValidationErrors) {
 	}
 
 	return &obj, nil
+}
+
+// transformSliceHooks applies BeforeValidate hooks to each element of a JSON array.
+// Returns the transformed JSON array data.
+func (v *Validator[T]) transformSliceHooks(objPtr reflect.Value, data []byte) ([]byte, ValidationErrors) {
+	var rawElements []json.RawMessage
+	if err := json.Unmarshal(data, &rawElements); err != nil {
+		return nil, ValidationErrors{{
+			Loc:     []string{},
+			Message: "JSON unmarshal failed: " + err.Error(),
+			Type:    ErrorTypeJSONDecode,
+		}}
+	}
+
+	elemType := objPtr.Elem().Type().Elem()
+	if elemType.Kind() == reflect.Pointer {
+		elemType = elemType.Elem()
+	}
+
+	var allErrs ValidationErrors
+	for i, rawData := range rawElements {
+		elemPtr := reflect.New(elemType)
+		transformed, hookErrs := applyBeforeValidateHook[[]byte](elemPtr, rawData)
+		if hookErrs != nil {
+			allErrs = append(allErrs, prefixErrors(hookErrs, "["+strconv.Itoa(i)+"]")...)
+			continue
+		}
+		rawElements[i] = transformed
+	}
+
+	if len(allErrs) > 0 {
+		return nil, allErrs
+	}
+
+	// Re-encode transformed elements
+	result, _ := json.Marshal(rawElements)
+	return result, nil
 }
 
 // Marshal validates the struct, applies defaults, and marshals to JSON.

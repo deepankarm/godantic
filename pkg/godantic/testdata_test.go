@@ -1,6 +1,10 @@
 package godantic_test
 
-import "github.com/deepankarm/godantic/pkg/godantic"
+import (
+	"fmt"
+
+	"github.com/deepankarm/godantic/pkg/godantic"
+)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED TEST FIXTURES
@@ -25,6 +29,18 @@ func (u *TUser) FieldName() godantic.FieldOptions[string] {
 
 func (u *TUser) FieldEmail() godantic.FieldOptions[string] {
 	return godantic.Field(godantic.Required[string]())
+}
+
+func (u *TUser) FieldAge() godantic.FieldOptions[int] {
+	return godantic.Field(
+		godantic.Required[int](),
+		godantic.Validate(func(age int) error {
+			if age < 0 || age > 150 {
+				return fmt.Errorf("age must be between 0 and 150")
+			}
+			return nil
+		}),
+	)
 }
 
 // TUserCustomTags has snake_case JSON tags.
@@ -122,6 +138,10 @@ type TItem struct {
 	Name string `json:"name"`
 }
 
+func (i *TItem) FieldID() godantic.FieldOptions[int] {
+	return godantic.Field(godantic.Required[int]())
+}
+
 // TUserWithSlice has slice fields.
 type TUserWithSlice struct {
 	Name  string   `json:"name"`
@@ -132,6 +152,34 @@ type TUserWithSlice struct {
 
 func (u *TUserWithSlice) FieldName() godantic.FieldOptions[string] {
 	return godantic.Field(godantic.Required[string]())
+}
+
+// TEmployee tests automatic element validation via Field methods.
+type TEmployee struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func (e *TEmployee) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (e *TEmployee) FieldEmail() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+// TOrganization tests slice-of-structs with automatic validation.
+type TOrganization struct {
+	Name      string      `json:"name"`
+	Employees []TEmployee `json:"employees"`
+}
+
+func (o *TOrganization) FieldName() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (o *TOrganization) FieldEmployees() godantic.FieldOptions[[]TEmployee] {
+	return godantic.Field(godantic.Required[[]TEmployee]())
 }
 
 // TUserWithMap has map fields.
@@ -260,6 +308,61 @@ func (a *TAnimalList) FieldAnimals() godantic.FieldOptions[[]TSimpleAnimal] {
 	return godantic.Field(godantic.Required[[]TSimpleAnimal]())
 }
 
+// TArticle tests slice validation with native types.
+type TArticle struct {
+	Title    string   `json:"title"`
+	Tags     []string `json:"tags"`
+	Scores   []int    `json:"scores"`
+	Keywords []string `json:"keywords"`
+}
+
+func (a *TArticle) FieldTitle() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (a *TArticle) FieldTags() godantic.FieldOptions[[]string] {
+	return godantic.Field(
+		godantic.Required[[]string](),
+		godantic.Validate(func(tags []string) error {
+			if len(tags) < 1 {
+				return fmt.Errorf("must have at least 1 tag")
+			}
+			if len(tags) > 10 {
+				return fmt.Errorf("cannot have more than 10 tags")
+			}
+			return nil
+		}),
+	)
+}
+
+func (a *TArticle) FieldScores() godantic.FieldOptions[[]int] {
+	return godantic.Field(
+		godantic.Validate(func(scores []int) error {
+			for i, score := range scores {
+				if score < 0 || score > 100 {
+					return fmt.Errorf("score at index %d must be between 0 and 100", i)
+				}
+			}
+			return nil
+		}),
+	)
+}
+
+func (a *TArticle) FieldKeywords() godantic.FieldOptions[[]string] {
+	return godantic.Field(
+		godantic.Validate(func(keywords []string) error {
+			seen := make(map[string]bool)
+			for _, keyword := range keywords {
+				if seen[keyword] {
+					return fmt.Errorf("duplicate keyword: %s", keyword)
+				}
+				seen[keyword] = true
+			}
+			return nil
+		}),
+	)
+}
+
 // TNestedAnimal has nested unions.
 type TNestedAnimal struct {
 	Type    string         `json:"type"`
@@ -279,6 +382,33 @@ type TCustomTaggedAnimal struct {
 }
 
 func (c *TCustomTaggedAnimal) FieldAnimalType() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Slice-Specific Test Types
+// ───────────────────────────────────────────────────────────────────────────
+
+// TMessage tests BeforeValidate hook with slices.
+type TMessage struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func (m *TMessage) BeforeValidate(raw map[string]any) error {
+	if textStr, ok := raw["content"].(string); ok {
+		raw["type"] = "text"
+		raw["text"] = textStr
+		delete(raw, "content")
+	}
+	return nil
+}
+
+func (m *TMessage) FieldType() godantic.FieldOptions[string] {
+	return godantic.Field(godantic.Required[string]())
+}
+
+func (m *TMessage) FieldText() godantic.FieldOptions[string] {
 	return godantic.Field(godantic.Required[string]())
 }
 
