@@ -288,6 +288,7 @@ func (v *Validator[T]) Marshal(obj *T) ([]byte, ValidationErrors) {
 	return data, nil
 }
 
+// nolint:godanticlint
 // FieldOptions returns the field options map (for schema generation)
 func (v *Validator[T]) FieldOptions() map[string]any {
 	result := make(map[string]any, len(v.fieldOptions))
