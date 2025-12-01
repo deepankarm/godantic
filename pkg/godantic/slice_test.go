@@ -409,3 +409,48 @@ func TestRootSliceHookErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestRootSliceMarshal(t *testing.T) {
+	validator := godantic.NewValidator[[]TUser]()
+
+	t.Run("marshal slice should work", func(t *testing.T) {
+		users := []TUser{
+			{Name: "Alice", Email: "alice@example.com", Age: 30},
+			{Name: "Bob", Email: "bob@example.com", Age: 25},
+		}
+
+		jsonData, errs := validator.Marshal(&users)
+		if len(errs) != 0 {
+			t.Fatalf("got %d errors, want 0: %v", len(errs), errs)
+		}
+
+		// Verify we can unmarshal it back
+		unmarshaled, errs := validator.Unmarshal(jsonData)
+		if len(errs) != 0 {
+			t.Fatalf("got %d unmarshal errors: %v", len(errs), errs)
+		}
+		if len(*unmarshaled) != 2 {
+			t.Errorf("got %d users, want 2", len(*unmarshaled))
+		}
+		if (*unmarshaled)[0].Name != "Alice" {
+			t.Errorf("got first name %q, want 'Alice'", (*unmarshaled)[0].Name)
+		}
+	})
+
+	t.Run("marshal empty slice should work", func(t *testing.T) {
+		users := []TUser{}
+
+		jsonData, errs := validator.Marshal(&users)
+		if len(errs) != 0 {
+			t.Fatalf("got %d errors, want 0: %v", len(errs), errs)
+		}
+
+		unmarshaled, errs := validator.Unmarshal(jsonData)
+		if len(errs) != 0 {
+			t.Fatalf("got %d unmarshal errors: %v", len(errs), errs)
+		}
+		if len(*unmarshaled) != 0 {
+			t.Errorf("got %d users, want 0", len(*unmarshaled))
+		}
+	})
+}
