@@ -197,7 +197,7 @@ func (v *Validator[T]) Unmarshal(data []byte) (*T, ValidationErrors) {
 func (v *Validator[T]) Marshal(obj *T) ([]byte, ValidationErrors) {
 	// Check if this is a discriminated union validator
 	if v.config.discriminator != nil {
-		return v.unmarshalDiscriminatedUnion(obj, v.config.discriminator)
+		return v.marshalDiscriminatedUnion(obj, v.config.discriminator)
 	}
 
 	// BeforeSerialize hook: transform struct before validation
@@ -259,7 +259,7 @@ func (v *Validator[T]) FieldOptions() map[string]any {
 // UnmarshalPartial parses potentially incomplete JSON into a struct.
 // Returns the partially populated struct, its completion state, and any errors.
 //
-// Unlike Marshal(), this method:
+// Unlike Unmarshal(), this method:
 // - Does NOT fail on incomplete JSON
 // - Tracks which fields are incomplete
 // - Skips validation for incomplete fields

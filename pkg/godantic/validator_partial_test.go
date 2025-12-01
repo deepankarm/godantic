@@ -10,7 +10,7 @@ import (
 // MarshalPartial - Basic Types
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestMarshalPartial_Basic(t *testing.T) {
+func TestUnmarshalPartial_Basic(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          string
@@ -90,7 +90,7 @@ func TestMarshalPartial_Basic(t *testing.T) {
 	}
 }
 
-func TestMarshalPartial_CustomTags(t *testing.T) {
+func TestUnmarshalPartial_CustomTags(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          string
@@ -149,7 +149,7 @@ func TestMarshalPartial_CustomTags(t *testing.T) {
 // MarshalPartial - Nested Structs
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestMarshalPartial_Nested(t *testing.T) {
+func TestUnmarshalPartial_Nested(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          string
@@ -216,7 +216,7 @@ func TestMarshalPartial_Nested(t *testing.T) {
 	}
 }
 
-func TestMarshalPartial_DeepNested(t *testing.T) {
+func TestUnmarshalPartial_DeepNested(t *testing.T) {
 	validator := godantic.NewValidator[TDeepConfig]()
 
 	tests := []struct {
@@ -271,7 +271,7 @@ func TestMarshalPartial_DeepNested(t *testing.T) {
 	}
 }
 
-func TestMarshalPartial_Pointers(t *testing.T) {
+func TestUnmarshalPartial_Pointers(t *testing.T) {
 	validator := godantic.NewValidator[TUserWithPointers]()
 
 	t.Run("truncated_pointer", func(t *testing.T) {
@@ -324,7 +324,7 @@ func TestMarshalPartial_Pointers(t *testing.T) {
 // MarshalPartial - Collections (Slices & Maps)
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestMarshalPartial_Slices(t *testing.T) {
+func TestUnmarshalPartial_Slices(t *testing.T) {
 	validator := godantic.NewValidator[TUserWithSlice]()
 
 	t.Run("truncated_slice_element", func(t *testing.T) {
@@ -386,7 +386,7 @@ func TestMarshalPartial_Slices(t *testing.T) {
 	})
 }
 
-func TestMarshalPartial_Maps(t *testing.T) {
+func TestUnmarshalPartial_Maps(t *testing.T) {
 	validator := godantic.NewValidator[TUserWithMap]()
 
 	t.Run("truncated_map_key", func(t *testing.T) {
@@ -435,7 +435,7 @@ func TestMarshalPartial_Maps(t *testing.T) {
 	})
 }
 
-func TestMarshalPartial_MapWithNestedStruct(t *testing.T) {
+func TestUnmarshalPartial_MapWithNestedStruct(t *testing.T) {
 	validator := godantic.NewValidator[TConfigWithNestedMap]()
 
 	t.Run("truncated", func(t *testing.T) {
@@ -475,7 +475,7 @@ func TestMarshalPartial_MapWithNestedStruct(t *testing.T) {
 // MarshalPartial - Discriminated Unions
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestMarshalPartial_Union(t *testing.T) {
+func TestUnmarshalPartial_Union(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	t.Run("partial_discriminator", func(t *testing.T) {
@@ -558,7 +558,7 @@ func TestMarshalPartial_Union(t *testing.T) {
 	})
 }
 
-func TestMarshalPartial_UnionArray(t *testing.T) {
+func TestUnmarshalPartial_UnionArray(t *testing.T) {
 	validator := godantic.NewValidator[TAnimalList]()
 
 	t.Run("truncated_element", func(t *testing.T) {
@@ -594,7 +594,7 @@ func TestMarshalPartial_UnionArray(t *testing.T) {
 	})
 }
 
-func TestMarshalPartial_NestedUnion(t *testing.T) {
+func TestUnmarshalPartial_NestedUnion(t *testing.T) {
 	validator := godantic.NewValidator[TNestedAnimal]()
 
 	t.Run("truncated_nested", func(t *testing.T) {
@@ -627,7 +627,7 @@ func TestMarshalPartial_NestedUnion(t *testing.T) {
 	})
 }
 
-func TestMarshalPartial_CustomTaggedUnion(t *testing.T) {
+func TestUnmarshalPartial_CustomTaggedUnion(t *testing.T) {
 	validator := godantic.NewValidator[TCustomTaggedAnimal]()
 
 	t.Run("truncated_custom_tag", func(t *testing.T) {

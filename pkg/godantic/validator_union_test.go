@@ -12,7 +12,7 @@ import (
 // Uses shared TAnimal, TCat, TDog, TBird fixtures from testdata_test.go
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestUnion_Marshal(t *testing.T) {
+func TestUnion_Unmarshal(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -114,7 +114,7 @@ func TestUnion_Marshal(t *testing.T) {
 	}
 }
 
-func TestUnion_Marshal_Validation(t *testing.T) {
+func TestUnion_Unmarshal_Validation(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -168,7 +168,7 @@ func TestUnion_Marshal_Validation(t *testing.T) {
 // Discriminated Union - Unmarshal (Struct → JSON)
 // ═══════════════════════════════════════════════════════════════════════════
 
-func TestUnion_Unmarshal(t *testing.T) {
+func TestUnion_Marshal(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -238,7 +238,7 @@ func TestUnion_Unmarshal(t *testing.T) {
 	}
 }
 
-func TestUnion_Unmarshal_Validation(t *testing.T) {
+func TestUnion_Marshal_Validation(t *testing.T) {
 	validator := NewTAnimalValidator()
 
 	tests := []struct {
@@ -340,7 +340,7 @@ func (c *TCatWithDefaults) FieldColor() godantic.FieldOptions[string] {
 	return godantic.Field(godantic.Default("orange"))
 }
 
-func TestUnion_Unmarshal_AppliesDefaults(t *testing.T) {
+func TestUnion_Marshal_AppliesDefaults(t *testing.T) {
 	validator := godantic.NewValidator[TAnimal](
 		godantic.WithDiscriminatorTyped("species", map[TAnimalSpecies]any{
 			TSpeciesCat: &TCatWithDefaults{},
@@ -438,7 +438,7 @@ func TestUnion_SliceOfUnions(t *testing.T) {
 		}
 	})
 
-	t.Run("marshal", func(t *testing.T) {
+	t.Run("unmarshal", func(t *testing.T) {
 		doc, errs := validator.Unmarshal([]byte(`{
 			"title": "Test",
 			"blocks": [
@@ -469,7 +469,7 @@ func TestUnion_SliceOfUnions(t *testing.T) {
 		}
 	})
 
-	t.Run("unmarshal", func(t *testing.T) {
+	t.Run("marshal", func(t *testing.T) {
 		doc := TDocument{
 			Title: "Round Trip",
 			Blocks: []TContentBlock{

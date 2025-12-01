@@ -204,8 +204,8 @@ func TestDefaultsWithJSON(t *testing.T) {
 	})
 }
 
-// Test Marshal convenience method
-func TestMarshal(t *testing.T) {
+// Test Unmarshal convenience method
+func TestUnmarshal_ConvenienceMethod(t *testing.T) {
 	validator := godantic.NewValidator[ServerSettings]()
 
 	t.Run("valid JSON with all fields", func(t *testing.T) {
@@ -359,8 +359,8 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-// Test Unmarshal convenience method
-func TestUnmarshal(t *testing.T) {
+// Test Marshal convenience method
+func TestMarshal_ConvenienceMethod(t *testing.T) {
 	validator := godantic.NewValidator[ServerSettings]()
 
 	t.Run("valid struct marshals to JSON", func(t *testing.T) {
