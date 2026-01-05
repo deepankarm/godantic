@@ -71,7 +71,6 @@ func (g *Generator[T]) GenerateFlattened() (map[string]any, error) {
 		return nil, err
 	}
 
-	// Convert schema to map for manipulation
 	schemaJSON, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
@@ -82,40 +81,7 @@ func (g *Generator[T]) GenerateFlattened() (map[string]any, error) {
 		return nil, fmt.Errorf("failed to unmarshal schema: %w", err)
 	}
 
-	// If there's no $ref at root, return as-is
-	ref, hasRef := schemaMap["$ref"].(string)
-	if !hasRef {
-		return schemaMap, nil
-	}
-
-	// Get the $defs
-	defs, ok := schemaMap["$defs"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("$defs not found in schema")
-	}
-
-	// Extract the root type name from $ref (e.g., "#/$defs/TypeName" -> "TypeName")
-	if !strings.HasPrefix(ref, "#/$defs/") {
-		return nil, fmt.Errorf("unexpected $ref format: %s", ref)
-	}
-	rootTypeName := ref[len("#/$defs/"):]
-
-	// Get the root definition
-	rootDef, ok := defs[rootTypeName].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("root definition %s not found in $defs", rootTypeName)
-	}
-
-	// Create flattened schema with root definition at top level
-	result := make(map[string]any)
-	maps.Copy(result, rootDef)
-
-	// Add $defs for nested types (excluding root type to avoid duplication)
-	if len(defs) > 1 {
-		result["$defs"] = defs
-	}
-
-	return result, nil
+	return flattenSchemaMap(schemaMap)
 }
 
 // GenerateJSON generates JSON Schema as JSON string
@@ -195,4 +161,101 @@ func GenerateForTypeWithOptions(t reflect.Type, opts SchemaOptions) (map[string]
 	}
 
 	return schemaMap, nil
+}
+
+// GenerateUnionSchema generates a JSON schema with anyOf from multiple types.
+// This is the Go equivalent of Python's `TypeA | TypeB | TypeC`.
+//
+// Each type's schema is generated and flattened (no $ref at root).
+// All $defs are merged into a single definitions block.
+//
+// Usage:
+//
+//	schema, err := GenerateUnionSchema(TypeA{}, TypeB{}, TypeC{})
+//	// Returns: {"anyOf": [...], "$defs": {...}}
+func GenerateUnionSchema(types ...any) (map[string]any, error) {
+	if len(types) == 0 {
+		return nil, nil
+	}
+
+	// Single type - just return its flattened schema
+	if len(types) == 1 {
+		return generateFlattenedForValue(types[0])
+	}
+
+	anyOf := make([]map[string]any, 0, len(types))
+	mergedDefs := make(map[string]any)
+
+	for _, t := range types {
+		schema, err := generateFlattenedForValue(t)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract and merge $defs
+		if defs, ok := schema["$defs"].(map[string]any); ok {
+			maps.Copy(mergedDefs, defs)
+			delete(schema, "$defs")
+		}
+
+		anyOf = append(anyOf, schema)
+	}
+
+	result := map[string]any{"anyOf": anyOf}
+	if len(mergedDefs) > 0 {
+		result["$defs"] = mergedDefs
+	}
+
+	return result, nil
+}
+
+// generateFlattenedForValue generates a flattened schema for a value instance
+func generateFlattenedForValue(v any) (map[string]any, error) {
+	t := reflect.TypeOf(v)
+	if t == nil {
+		return nil, fmt.Errorf("nil type provided")
+	}
+
+	schema, err := GenerateForType(t)
+	if err != nil {
+		return nil, err
+	}
+
+	return flattenSchemaMap(schema)
+}
+
+// flattenSchemaMap inlines the root $ref definition at the top level.
+// If schema has {"$ref": "#/$defs/TypeName", "$defs": {...}}, it becomes
+// the TypeName definition with $defs for any nested types.
+func flattenSchemaMap(schema map[string]any) (map[string]any, error) {
+	ref, hasRef := schema["$ref"].(string)
+	if !hasRef {
+		return schema, nil
+	}
+
+	defs, ok := schema["$defs"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("$defs not found in schema with $ref")
+	}
+
+	if !strings.HasPrefix(ref, "#/$defs/") {
+		return nil, fmt.Errorf("unexpected $ref format: %s", ref)
+	}
+	typeName := ref[len("#/$defs/"):]
+
+	rootDef, ok := defs[typeName].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("definition %s not found in $defs", typeName)
+	}
+
+	result := make(map[string]any)
+	maps.Copy(result, rootDef)
+
+	// Keep $defs for nested types (remove self-reference to avoid duplication)
+	delete(defs, typeName)
+	if len(defs) > 0 {
+		result["$defs"] = defs
+	}
+
+	return result, nil
 }
