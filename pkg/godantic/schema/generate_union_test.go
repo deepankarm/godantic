@@ -57,6 +57,13 @@ func TestGenerateUnionSchema_Empty(t *testing.T) {
 	}
 }
 
+func TestGenerateUnionSchema_NilType(t *testing.T) {
+	_, err := schema.GenerateUnionSchema(nil)
+	if err == nil {
+		t.Error("expected error for nil type")
+	}
+}
+
 func TestGenerateUnionSchema_SingleType(t *testing.T) {
 	result, err := schema.GenerateUnionSchema(UnionTypeA{})
 	if err != nil {
@@ -332,5 +339,62 @@ func TestGenerateUnionSchema_APIResponse(t *testing.T) {
 	var schemaCheck map[string]any
 	if err := json.Unmarshal(jsonBytes, &schemaCheck); err != nil {
 		t.Fatalf("invalid JSON Schema: %v", err)
+	}
+}
+
+// Test with multiple nested types to ensure $defs merging works
+type ParentA struct {
+	Child ChildType `json:"child"`
+}
+
+type ParentB struct {
+	Child ChildType `json:"child"`
+	Extra string    `json:"extra"`
+}
+
+type ChildType struct {
+	Value int `json:"value"`
+}
+
+func TestGenerateUnionSchema_SharedNestedTypes(t *testing.T) {
+	result, err := schema.GenerateUnionSchema(ParentA{}, ParentB{})
+	if err != nil {
+		t.Fatalf("GenerateUnionSchema failed: %v", err)
+	}
+
+	anyOf := result["anyOf"].([]map[string]any)
+	if len(anyOf) != 2 {
+		t.Fatalf("expected 2 schemas, got %d", len(anyOf))
+	}
+
+	// Both reference same ChildType, should be in merged $defs
+	defs, ok := result["$defs"].(map[string]any)
+	if !ok {
+		t.Fatal("expected $defs for shared nested type")
+	}
+	if _, ok := defs["ChildType"]; !ok {
+		t.Error("expected ChildType in merged $defs")
+	}
+}
+
+// Test simple types without $ref (primitives don't need flattening)
+type SimpleFlat struct {
+	Name string `json:"name"`
+}
+
+func TestGenerateUnionSchema_NoRefNeeded(t *testing.T) {
+	// Simple struct should still work even if schema has no $ref
+	result, err := schema.GenerateUnionSchema(SimpleFlat{})
+	if err != nil {
+		t.Fatalf("GenerateUnionSchema failed: %v", err)
+	}
+
+	// Should have properties directly
+	props, ok := result["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("expected properties in schema")
+	}
+	if _, ok := props["name"]; !ok {
+		t.Error("expected 'name' property")
 	}
 }

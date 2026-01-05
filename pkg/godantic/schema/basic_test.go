@@ -255,3 +255,50 @@ func TestGenerateFlattened(t *testing.T) {
 		}
 	})
 }
+
+func TestGeneratorWithOptions(t *testing.T) {
+	sg := schema.NewGenerator[SchemaUser]().WithOptions(schema.SchemaOptions{
+		AutoGenerateTitles: false,
+	})
+
+	s, err := sg.Generate()
+	if err != nil {
+		t.Fatalf("failed to generate schema: %v", err)
+	}
+
+	if s == nil {
+		t.Error("expected non-nil schema")
+	}
+}
+
+func TestGeneratorWithAutoTitles(t *testing.T) {
+	sg := schema.NewGenerator[SchemaUser]().WithAutoTitles(false)
+
+	s, err := sg.Generate()
+	if err != nil {
+		t.Fatalf("failed to generate schema: %v", err)
+	}
+
+	if s == nil {
+		t.Error("expected non-nil schema")
+	}
+}
+
+func TestGenerateJSON(t *testing.T) {
+	sg := schema.NewGenerator[SchemaUser]()
+
+	jsonStr, err := sg.GenerateJSON()
+	if err != nil {
+		t.Fatalf("GenerateJSON failed: %v", err)
+	}
+
+	if jsonStr == "" {
+		t.Error("expected non-empty JSON string")
+	}
+
+	// Should be valid JSON
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		t.Errorf("GenerateJSON produced invalid JSON: %v", err)
+	}
+}
