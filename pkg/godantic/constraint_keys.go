@@ -43,4 +43,7 @@ const (
 	// Union constraints
 	ConstraintAnyOf         = "anyOf"
 	ConstraintDiscriminator = "discriminator"
+
+	// Nullable constraint (anyOf with null)
+	ConstraintNullable = "nullable"
 )

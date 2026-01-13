@@ -179,6 +179,12 @@ func enhanceDefinition(defSchema *jsonschema.Schema, t reflect.Type, autoGenerat
 		// Apply constraints
 		applyConstraints(prop, opts.Constraints)
 
+		// Handle nullable constraint - wrap in anyOf with null
+		if nullable, ok := opts.Constraints[godantic.ConstraintNullable].(bool); ok && nullable {
+			prop = wrapNullable(prop)
+			defSchema.Properties.Set(jsonName, prop)
+		}
+
 		// Add title
 		if prop.Title == "" {
 			prop.Title = toTitleCase(fieldName)
@@ -240,4 +246,28 @@ func toTitleCase(fieldName string) string {
 	}
 
 	return string(result)
+}
+
+// wrapNullable wraps a schema in anyOf with null, matching Python's Optional[T] behavior.
+// It creates: {"anyOf": [<original_schema>, {"type": "null"}], "title": <original_title>}
+func wrapNullable(prop *jsonschema.Schema) *jsonschema.Schema {
+	// Preserve the title from the original property
+	title := prop.Title
+
+	// Create the nullable wrapper
+	wrapped := &jsonschema.Schema{
+		AnyOf: []*jsonschema.Schema{
+			prop,
+			{Type: "null"},
+		},
+	}
+
+	// Restore title on the wrapper (title is typically preserved at the property level)
+	if title != "" {
+		wrapped.Title = title
+		// Clear title from inner schema to avoid duplication
+		prop.Title = ""
+	}
+
+	return wrapped
 }
