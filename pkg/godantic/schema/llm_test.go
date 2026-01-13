@@ -38,9 +38,9 @@ func TestTransformForOpenAI(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		schema  map[string]any
-		check   func(t *testing.T, transformed map[string]any)
+		name   string
+		schema map[string]any
+		check  func(t *testing.T, transformed map[string]any)
 	}{
 		{
 			name:   "wraps union schema with response property",

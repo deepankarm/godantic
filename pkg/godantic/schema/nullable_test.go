@@ -129,11 +129,11 @@ func TestNullablePreservesMetadata(t *testing.T) {
 	def := s.Definitions["NullableResponse"]
 
 	tests := []struct {
-		name       string
-		fieldName  string
-		wantTitle  string
-		wantDesc   string
-		descInner  bool // true if description is on inner schema
+		name      string
+		fieldName string
+		wantTitle string
+		wantDesc  string
+		descInner bool // true if description is on inner schema
 	}{
 		{
 			name:      "nullable field preserves title",
