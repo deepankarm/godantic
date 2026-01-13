@@ -445,3 +445,22 @@ func DiscriminatedUnion[T any](discriminatorField string, variants map[string]an
 		return fo
 	}
 }
+
+// Nullable marks a field as nullable, generating anyOf with null in the JSON Schema.
+// This matches Python's Optional[T] behavior in Pydantic where optional fields
+// generate {"anyOf": [T, {"type": "null"}]}.
+//
+// Example:
+//
+//	func (r *Response) FieldCitations() godantic.FieldOptions[*[]string] {
+//	    return godantic.Field(godantic.Nullable[*[]string]())
+//	}
+//
+// This generates: {"anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}]}
+func Nullable[T any]() func(FieldOptions[T]) FieldOptions[T] {
+	return func(fo FieldOptions[T]) FieldOptions[T] {
+		fo = ensureConstraints(fo)
+		fo.Constraints_[ConstraintNullable] = true
+		return fo
+	}
+}

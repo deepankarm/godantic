@@ -103,10 +103,10 @@ func main() {
 
 	// Serve OpenAPI spec
 	router.GET("/openapi.json", api.OpenAPIHandler())
-	
+
 	// Serve Swagger UI (interactive API documentation)
 	router.GET("/docs", gingodantic.SwaggerUI("/openapi.json"))
-	
+
 	// Serve ReDoc (alternative API documentation)
 	router.GET("/redoc", gingodantic.ReDoc("/openapi.json"))
 
