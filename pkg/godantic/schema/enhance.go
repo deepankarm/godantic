@@ -153,6 +153,55 @@ func enhanceDefinition(defSchema *jsonschema.Schema, t reflect.Type, autoGenerat
 	// Track which properties have field options
 	enhanced := make(map[string]bool)
 
+	// Auto-require non-pointer fields (matching Pydantic behavior)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Anonymous {
+			continue // Skip embedded fields (their fields are handled separately)
+		}
+
+		jsonName := reflectutil.JSONFieldName(field)
+		if jsonName == "-" {
+			continue // Skip ignored fields
+		}
+
+		// Check if property exists in schema
+		_, exists := defSchema.Properties.Get(jsonName)
+		if !exists {
+			continue
+		}
+
+		// Check if field type is a pointer
+		_, isPointer := reflectutil.UnwrapPointerInfo(field.Type)
+
+		// Get field options if available
+		opts, hasOpts := fieldOptions[field.Name]
+
+		// Check for Nullable constraint
+		isNullable := false
+		if hasOpts {
+			if nullable, ok := opts.Constraints[godantic.ConstraintNullable].(bool); ok && nullable {
+				isNullable = true
+			}
+		}
+
+		// Determine if field should be required:
+		// 1. If explicitly marked Required() -> required
+		// 2. If pointer type -> NOT required (unless explicit Required())
+		// 3. If has Nullable constraint -> NOT required (unless explicit Required())
+		// 4. Otherwise (non-pointer, non-nullable) -> required
+		shouldBeRequired := false
+		if hasOpts && opts.Required {
+			shouldBeRequired = true // Explicit Required() always wins
+		} else if !isPointer && !isNullable {
+			shouldBeRequired = true // Non-pointer, non-nullable -> auto-required
+		}
+
+		if shouldBeRequired && !slices.Contains(defSchema.Required, jsonName) {
+			defSchema.Required = append(defSchema.Required, jsonName)
+		}
+	}
+
 	// Apply field options to properties with Field{Name}() methods
 	for fieldName, opts := range fieldOptions {
 		jsonName := reflectutil.GoFieldToJSONName(t, fieldName)
@@ -169,11 +218,6 @@ func enhanceDefinition(defSchema *jsonschema.Schema, t reflect.Type, autoGenerat
 		if isEmptyInterfaceSchema(prop) {
 			prop = &jsonschema.Schema{}
 			defSchema.Properties.Set(jsonName, prop)
-		}
-
-		// Mark as required
-		if opts.Required && !slices.Contains(defSchema.Required, jsonName) {
-			defSchema.Required = append(defSchema.Required, jsonName)
 		}
 
 		// Apply constraints
