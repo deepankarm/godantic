@@ -24,12 +24,6 @@ type extendedPayload struct {
 	Revision int
 }
 
-// Regular nested struct (for comparison)
-type nestedPayload struct {
-	Base     basePayload
-	Revision int
-}
-
 type testAddress struct {
 	Street string
 	City   string
@@ -569,43 +563,17 @@ func TestWalker_RootSlice(t *testing.T) {
 }
 
 func TestWalker_EmbeddedStructFieldOverride(t *testing.T) {
-	// This test verifies that when an outer struct overrides a Field{Name}() method
-	// from an embedded struct, the outer struct's validation is used.
-	//
-	// Example: basePayload has FieldType() with Const("base_type")
-	//          extendedPayload embeds basePayload and overrides FieldType() with Const("extended_type")
-	//          When validating extendedPayload, it should use "extended_type", not "base_type"
-
-	// Debug: verify struct field layout
-	t.Run("verify_struct_layout", func(t *testing.T) {
-		et := reflect.TypeOf(extendedPayload{})
-		t.Logf("extendedPayload NumField: %d", et.NumField())
-		for i := 0; i < et.NumField(); i++ {
-			f := et.Field(i)
-			t.Logf("  Field %d: Name=%s, Type=%s, Anonymous=%v", i, f.Name, f.Type.Name(), f.Anonymous)
-		}
-
-		bt := reflect.TypeOf(basePayload{})
-		t.Logf("basePayload NumField: %d", bt.NumField())
-		for i := 0; i < bt.NumField(); i++ {
-			f := bt.Field(i)
-			t.Logf("  Field %d: Name=%s, Type=%s", i, f.Name, f.Type.Name())
-		}
-	})
-
-	var validatorCalls []string
+	// Tests that when an outer struct provides field options for a promoted field
+	// from an embedded struct, the outer struct's options are used (not the embedded struct's).
 
 	scanner := &mockScanner{
 		options: map[string]map[string]*FieldOptions{
-			// Base payload requires Type="base_type"
 			"basePayload": {
 				"Type": {
 					Required: true,
 					Validators: []func(any) error{
 						func(v any) error {
-							s := v.(string)
-							validatorCalls = append(validatorCalls, fmt.Sprintf("baseValidator(%s)", s))
-							if s != "base_type" {
+							if v.(string) != "base_type" {
 								return fmt.Errorf("type must be base_type")
 							}
 							return nil
@@ -613,15 +581,12 @@ func TestWalker_EmbeddedStructFieldOverride(t *testing.T) {
 					},
 				},
 			},
-			// Extended payload overrides to require Type="extended_type"
 			"extendedPayload": {
 				"Type": {
 					Required: true,
 					Validators: []func(any) error{
 						func(v any) error {
-							s := v.(string)
-							validatorCalls = append(validatorCalls, fmt.Sprintf("extendedValidator(%s)", s))
-							if s != "extended_type" {
+							if v.(string) != "extended_type" {
 								return fmt.Errorf("type must be extended_type")
 							}
 							return nil
@@ -635,136 +600,39 @@ func TestWalker_EmbeddedStructFieldOverride(t *testing.T) {
 	vp := NewValidateProcessor()
 	walker := NewWalker(scanner, vp)
 
-	t.Run("extended_type should be valid for extendedPayload", func(t *testing.T) {
+	t.Run("uses outer struct validator for promoted field", func(t *testing.T) {
 		vp.Errors = nil
-		validatorCalls = nil
+		// Type="extended_type" should pass for extendedPayload (uses outer validator)
 		payload := extendedPayload{
 			basePayload: basePayload{Type: "extended_type", Query: "test"},
 			Revision:    1,
 		}
-
-		err := walker.Walk(reflect.ValueOf(payload), nil)
-		if err != nil {
-			t.Fatalf("Walk returned error: %v", err)
+		if err := walker.Walk(reflect.ValueOf(payload), nil); err != nil {
+			t.Fatal(err)
 		}
-
-		t.Logf("validators called: %v", validatorCalls)
-
-		// BUG: Currently this passes because the walker descends into the embedded
-		// basePayload struct and validates Type with basePayload's validator.
-		// Since "extended_type" != "base_type", basePayload's validator should fail.
-		// But it passes, which means the embedded struct validation is being skipped
-		// or something else is happening.
 		if len(vp.Errors) != 0 {
-			t.Logf("errors (expected 0): %v", vp.Errors)
-			for _, e := range vp.Errors {
-				t.Logf("  error at %v: %s", e.Loc, e.Message)
-			}
-			t.Errorf("expected no errors for extended_type, got %d", len(vp.Errors))
+			t.Errorf("expected no errors, got %v", vp.Errors)
 		}
-	})
 
-	t.Run("base_type should fail for extendedPayload", func(t *testing.T) {
 		vp.Errors = nil
-		validatorCalls = nil
-		payload := extendedPayload{
-			basePayload: basePayload{Type: "base_type", Query: "test"},
-			Revision:    1,
+		// Type="base_type" should fail for extendedPayload (outer validator expects "extended_type")
+		payload.Type = "base_type"
+		if err := walker.Walk(reflect.ValueOf(payload), nil); err != nil {
+			t.Fatal(err)
 		}
-
-		err := walker.Walk(reflect.ValueOf(payload), nil)
-		if err != nil {
-			t.Fatalf("Walk returned error: %v", err)
-		}
-
-		t.Logf("validators called: %v", validatorCalls)
-
-		// Should have 1 error: Type must be extended_type
-		// If we get 2 errors, it means the embedded struct's validation was also run
-		// If we get 0 errors, it means the outer struct's validation was never applied to the promoted field
-		if len(vp.Errors) != 1 {
-			t.Errorf("expected 1 error (Type must be extended_type), got %d: %v", len(vp.Errors), vp.Errors)
-			for _, e := range vp.Errors {
-				t.Logf("  error at %v: %s", e.Loc, e.Message)
-			}
-		}
-		if len(vp.Errors) > 0 && vp.Errors[0].Message != "type must be extended_type" {
-			t.Errorf("expected error message 'type must be extended_type', got '%s'", vp.Errors[0].Message)
+		if len(vp.Errors) != 1 || vp.Errors[0].Message != "type must be extended_type" {
+			t.Errorf("expected 1 error 'type must be extended_type', got %v", vp.Errors)
 		}
 	})
 
-	t.Run("embedded struct field should be validated with embedded validators when no override", func(t *testing.T) {
-		// When basePayload is validated directly, Type must be "base_type"
+	t.Run("base type uses own validator when not embedded", func(t *testing.T) {
 		vp.Errors = nil
 		payload := basePayload{Type: "wrong_type", Query: "test"}
-
-		err := walker.Walk(reflect.ValueOf(payload), nil)
-		if err != nil {
-			t.Fatalf("Walk returned error: %v", err)
+		if err := walker.Walk(reflect.ValueOf(payload), nil); err != nil {
+			t.Fatal(err)
 		}
-
 		if len(vp.Errors) != 1 {
-			t.Errorf("expected 1 error for basePayload with wrong type, got %d: %v", len(vp.Errors), vp.Errors)
-		}
-	})
-
-	t.Run("compare_embedded_vs_nested", func(t *testing.T) {
-		// This test compares behavior between embedded and regular nested struct
-		// Both should validate the inner Type field with basePayload's validator
-
-		// Debug: Check ShouldDescend for both
-		nestedType := reflect.TypeOf(nestedPayload{})
-		extendedType := reflect.TypeOf(extendedPayload{})
-
-		t.Logf("nestedPayload field 0: Name=%s, Type=%s, Anonymous=%v",
-			nestedType.Field(0).Name, nestedType.Field(0).Type.Name(), nestedType.Field(0).Anonymous)
-		t.Logf("extendedPayload field 0: Name=%s, Type=%s, Anonymous=%v",
-			extendedType.Field(0).Name, extendedType.Field(0).Type.Name(), extendedType.Field(0).Anonymous)
-
-		vp.Errors = nil
-		validatorCalls = nil
-
-		// Test nested (non-embedded) struct
-		nested := nestedPayload{
-			Base:     basePayload{Type: "wrong_type", Query: "test"},
-			Revision: 1,
-		}
-
-		err := walker.Walk(reflect.ValueOf(nested), nil)
-		if err != nil {
-			t.Fatalf("Walk returned error: %v", err)
-		}
-
-		t.Logf("nested struct - validators called: %v, errors: %v", validatorCalls, vp.Errors)
-		nestedValidatorsCalled := len(validatorCalls)
-		nestedErrors := len(vp.Errors)
-
-		// Now test embedded struct
-		vp.Errors = nil
-		validatorCalls = nil
-
-		embedded := extendedPayload{
-			basePayload: basePayload{Type: "wrong_type", Query: "test"},
-			Revision:    1,
-		}
-
-		err = walker.Walk(reflect.ValueOf(embedded), nil)
-		if err != nil {
-			t.Fatalf("Walk returned error: %v", err)
-		}
-
-		t.Logf("embedded struct - validators called: %v, errors: %v", validatorCalls, vp.Errors)
-		embeddedValidatorsCalled := len(validatorCalls)
-		embeddedErrors := len(vp.Errors)
-
-		// Both should have called the basePayload validator
-		if nestedValidatorsCalled != embeddedValidatorsCalled {
-			t.Errorf("nested called %d validators, embedded called %d - should be same",
-				nestedValidatorsCalled, embeddedValidatorsCalled)
-		}
-		if nestedErrors != embeddedErrors {
-			t.Errorf("nested had %d errors, embedded had %d - should be same",
-				nestedErrors, embeddedErrors)
+			t.Errorf("expected 1 error, got %d", len(vp.Errors))
 		}
 	})
 }
