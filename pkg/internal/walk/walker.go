@@ -124,7 +124,7 @@ func (w *Walker) Walk(val reflect.Value, data []byte) error {
 		return nil // Don't continue with invalid JSON
 	}
 
-	return w.walkStruct(val, rawFields, []string{}, true)
+	return w.walkStruct(val, rawFields, []string{}, true, nil)
 }
 
 // walkRootSlice handles root-level slice traversal.
@@ -188,7 +188,7 @@ func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
 		}
 
 		elemPath := appendPathIndex([]string{}, i)
-		if err := w.walkStruct(elemVal, rawFields, elemPath, true); err != nil {
+		if err := w.walkStruct(elemVal, rawFields, elemPath, true, nil); err != nil {
 			return err
 		}
 	}
@@ -197,7 +197,9 @@ func (w *Walker) walkRootSlice(slice reflect.Value, data []byte) error {
 }
 
 // walkStruct walks a struct value and its fields.
-func (w *Walker) walkStruct(val reflect.Value, rawFields map[string]json.RawMessage, path []string, isRoot bool) error {
+// If fieldOptsOverride is provided, it's used instead of scanning from the type.
+// This is used for embedded structs where the parent's field options should apply.
+func (w *Walker) walkStruct(val reflect.Value, rawFields map[string]json.RawMessage, path []string, isRoot bool, fieldOptsOverride map[string]*FieldOptions) error {
 	// Unwrap pointers/interfaces and check for cycles
 	for val.Kind() == reflect.Pointer || val.Kind() == reflect.Interface {
 		if val.IsNil() {
@@ -235,16 +237,23 @@ func (w *Walker) walkStruct(val reflect.Value, rawFields map[string]json.RawMess
 		}
 	}
 
-	// Scan field options for this type
-	fieldOpts := w.scanner.ScanFieldOptions(t)
+	// Use override if provided (for embedded structs), otherwise scan from type
+	var fieldOpts map[string]*FieldOptions
+	if fieldOptsOverride != nil {
+		fieldOpts = fieldOptsOverride
+	} else {
+		fieldOpts = w.scanner.ScanFieldOptions(t)
+	}
 
 	// Process each field
 	for i := 0; i < t.NumField(); i++ {
 		structField := t.Field(i)
 		fieldVal := val.Field(i)
 
-		// Skip unexported fields
-		if !structField.IsExported() {
+		// Skip unexported fields, but allow anonymous (embedded) fields
+		// Embedded fields may have unexported names
+		// but their promoted fields should still be accessible and validated
+		if !structField.IsExported() && !structField.Anonymous {
 			continue
 		}
 
@@ -274,18 +283,24 @@ func (w *Walker) walkStruct(val reflect.Value, rawFields map[string]json.RawMess
 
 		// Check if we should descend
 		if w.shouldDescend(ctx) {
-			// Handle slices
+			var nestedRaw map[string]json.RawMessage
+			if len(ctx.RawJSON) > 0 {
+				json.Unmarshal(ctx.RawJSON, &nestedRaw)
+			}
+
 			if fieldVal.Kind() == reflect.Slice {
 				if err := w.walkSlice(fieldVal, ctx.RawJSON, fieldPath); err != nil {
 					return err
 				}
-			} else {
-				// Nested struct - parse its JSON if available
-				var nestedRaw map[string]json.RawMessage
-				if len(ctx.RawJSON) > 0 {
-					json.Unmarshal(ctx.RawJSON, &nestedRaw)
+			} else if structField.Anonymous {
+				// For embedded/anonymous structs, use PARENT's field options
+				// so overridden Field{Name}() methods on the outer struct apply
+				if err := w.walkStruct(fieldVal, nestedRaw, path, false, fieldOpts); err != nil {
+					return err
 				}
-				if err := w.walkStruct(fieldVal, nestedRaw, fieldPath, false); err != nil {
+			} else {
+				// Regular nested struct - scan its own field options
+				if err := w.walkStruct(fieldVal, nestedRaw, fieldPath, false, nil); err != nil {
 					return err
 				}
 			}
@@ -328,7 +343,7 @@ func (w *Walker) walkSlice(slice reflect.Value, rawJSON json.RawMessage, path []
 			json.Unmarshal(elemRaw, &rawFields)
 		}
 
-		if err := w.walkStruct(elemVal, rawFields, elemPath, false); err != nil {
+		if err := w.walkStruct(elemVal, rawFields, elemPath, false, nil); err != nil {
 			return err
 		}
 	}
