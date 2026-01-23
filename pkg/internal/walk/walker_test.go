@@ -13,6 +13,17 @@ type testUser struct {
 	Age   int
 }
 
+// Embedded struct test types
+type basePayload struct {
+	Type  string
+	Query string
+}
+
+type extendedPayload struct {
+	basePayload
+	Revision int
+}
+
 type testAddress struct {
 	Street string
 	City   string
@@ -547,6 +558,81 @@ func TestWalker_RootSlice(t *testing.T) {
 		err := walker.Walk(sliceVal, jsonData)
 		if err != nil {
 			t.Fatalf("Walk returned error: %v", err)
+		}
+	})
+}
+
+func TestWalker_EmbeddedStructFieldOverride(t *testing.T) {
+	// Tests that when an outer struct provides field options for a promoted field
+	// from an embedded struct, the outer struct's options are used (not the embedded struct's).
+
+	scanner := &mockScanner{
+		options: map[string]map[string]*FieldOptions{
+			"basePayload": {
+				"Type": {
+					Required: true,
+					Validators: []func(any) error{
+						func(v any) error {
+							if v.(string) != "base_type" {
+								return fmt.Errorf("type must be base_type")
+							}
+							return nil
+						},
+					},
+				},
+			},
+			"extendedPayload": {
+				"Type": {
+					Required: true,
+					Validators: []func(any) error{
+						func(v any) error {
+							if v.(string) != "extended_type" {
+								return fmt.Errorf("type must be extended_type")
+							}
+							return nil
+						},
+					},
+				},
+			},
+		},
+	}
+
+	vp := NewValidateProcessor()
+	walker := NewWalker(scanner, vp)
+
+	t.Run("uses outer struct validator for promoted field", func(t *testing.T) {
+		vp.Errors = nil
+		// Type="extended_type" should pass for extendedPayload (uses outer validator)
+		payload := extendedPayload{
+			basePayload: basePayload{Type: "extended_type", Query: "test"},
+			Revision:    1,
+		}
+		if err := walker.Walk(reflect.ValueOf(payload), nil); err != nil {
+			t.Fatal(err)
+		}
+		if len(vp.Errors) != 0 {
+			t.Errorf("expected no errors, got %v", vp.Errors)
+		}
+
+		vp.Errors = nil
+		// Type="base_type" should fail for extendedPayload (outer validator expects "extended_type")
+		payload.Type = "base_type"
+		if err := walker.Walk(reflect.ValueOf(payload), nil); err != nil {
+			t.Fatal(err)
+		}
+		if len(vp.Errors) != 1 || vp.Errors[0].Message != "type must be extended_type" {
+			t.Errorf("expected 1 error 'type must be extended_type', got %v", vp.Errors)
+		}
+	})
+
+	t.Run("base type uses own validator when not embedded", func(t *testing.T) {
+		vp.Errors = nil
+		payload := basePayload{Type: "wrong_type", Query: "test"}
+		if err := walker.Walk(reflect.ValueOf(payload), nil); err != nil {
+			t.Fatal(err)
+		}
+		if len(vp.Errors) != 1 {
+			t.Errorf("expected 1 error, got %d", len(vp.Errors))
 		}
 	})
 }
