@@ -12,7 +12,9 @@
 
 ---
 
-Catch hallucinated types before they crash your app. Works with OpenAI, Anthropic, Gemini, Gin REST APIs (with OpenAPI generation), and any system that consumes JSON Schema. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi).
+Go's validation and schema libraries are separate — you wire them together and keep constraints in sync manually. Struct tags define constraints as magic strings you can't test or refactor easily. Go has no union types for polymorphic responses. And there's no way to parse partial JSON from streaming LLMs.
+
+godantic fixes this. One struct definition with typed methods drives schema generation, validation, and serialization together. Works with OpenAI, Anthropic, Gemini, Gin REST APIs (with OpenAPI generation), and any system that consumes JSON Schema. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi).
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {
