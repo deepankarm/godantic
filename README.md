@@ -1,8 +1,18 @@
-# Godantic
+<div align="center">
+
+# godantic
+
+<img src="logo.svg" width="150" height="150" alt="godantic logo">
 
 [![Tests](https://github.com/deepankarm/godantic/workflows/Tests/badge.svg)](https://github.com/deepankarm/godantic/actions/workflows/test.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/deepankarm/godantic.svg)](https://pkg.go.dev/github.com/deepankarm/godantic) [![Go Report Card](https://goreportcard.com/badge/github.com/deepankarm/godantic)](https://goreportcard.com/report/github.com/deepankarm/godantic) [![Go Version](https://img.shields.io/github/go-mod/go-version/deepankarm/godantic)](go.mod) [![codecov](https://codecov.io/gh/deepankarm/godantic/branch/main/graph/badge.svg)](https://codecov.io/gh/deepankarm/godantic)
 
-**Pydantic for Go - JSON schema generation, LLM response validation, partial JSON streaming.** Catch hallucinated types before they crash your app. Works with OpenAI, Anthropic, Gemini, Gin REST APIs (with OpenAPI generation), and any system that consumes JSON Schema. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi). 
+**Pydantic for Go - JSON schema generation, LLM response validation, partial JSON streaming.**
+
+</div>
+
+---
+
+Catch hallucinated types before they crash your app. Works with OpenAI, Anthropic, Gemini, Gin REST APIs (with OpenAPI generation), and any system that consumes JSON Schema. Inspired by Python's [Pydantic](https://github.com/pydantic/pydantic) and [FastAPI](https://github.com/fastapi/fastapi).
 
 ```go
 func (u *User) FieldEmail() godantic.FieldOptions[string] {

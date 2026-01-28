@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Left brace with a gap/break — partial JSON, streaming -->
+  <path d="M10 5 Q6 5 6 9 L6 13 Q6 15 3 15"
+        fill="none" stroke="#00ADD8" stroke-width="2" stroke-linecap="round"/>
+  <!-- gap here -->
+  <path d="M3 17 Q6 17 6 19 L6 23 Q6 27 10 27"
+        fill="none" stroke="#00ADD8" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Right brace — solid, complete, validated -->
+  <path d="M22 5 Q26 5 26 9 L26 13 Q26 16 29 16 Q26 16 26 19 L26 23 Q26 27 22 27"
+        fill="none" stroke="#00ADD8" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Short dashes inside — schema field lines -->
+  <line x1="13" y1="11" x2="19" y2="11" stroke="#00ADD8" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="13" y1="16" x2="17" y2="16" stroke="#00ADD8" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="13" y1="21" x2="18" y2="21" stroke="#00ADD8" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
