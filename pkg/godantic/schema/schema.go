@@ -166,13 +166,14 @@ func GenerateForTypeWithOptions(t reflect.Type, opts SchemaOptions) (map[string]
 // GenerateUnionSchema generates a JSON schema with anyOf from multiple types.
 // This is the Go equivalent of Python's `TypeA | TypeB | TypeC`.
 //
-// Each type's schema is generated and flattened (no $ref at root).
-// All $defs are merged into a single definitions block.
+// Each variant type is placed in $defs with a $ref in anyOf, matching
+// pydantic's behavior. Named types in $defs help the model pick the
+// correct union variant.
 //
 // Usage:
 //
 //	schema, err := GenerateUnionSchema(TypeA{}, TypeB{}, TypeC{})
-//	// Returns: {"anyOf": [...], "$defs": {...}}
+//	// Returns: {"anyOf": [{"$ref": "#/$defs/TypeA"}, ...], "$defs": {...}}
 func GenerateUnionSchema(types ...any) (map[string]any, error) {
 	if len(types) == 0 {
 		return nil, nil
@@ -183,22 +184,40 @@ func GenerateUnionSchema(types ...any) (map[string]any, error) {
 		return generateFlattenedForValue(types[0])
 	}
 
-	anyOf := make([]map[string]any, 0, len(types))
+	anyOf := make([]any, 0, len(types))
 	mergedDefs := make(map[string]any)
 
 	for _, t := range types {
-		schema, err := generateFlattenedForValue(t)
+		rt := reflect.TypeOf(t)
+		if rt == nil {
+			return nil, fmt.Errorf("nil type provided")
+		}
+
+		// Generate non-flattened schema (keeps root $ref + $defs)
+		schema, err := GenerateForType(rt)
 		if err != nil {
 			return nil, err
 		}
 
-		// Extract and merge $defs
+		// Extract and merge all $defs
 		if defs, ok := schema["$defs"].(map[string]any); ok {
 			maps.Copy(mergedDefs, defs)
-			delete(schema, "$defs")
 		}
 
-		anyOf = append(anyOf, schema)
+		// The root $ref points to the variant type in $defs
+		// e.g. {"$ref": "#/$defs/QueryCompletedPayload", "$defs": {...}}
+		if ref, ok := schema["$ref"].(string); ok {
+			anyOf = append(anyOf, map[string]any{"$ref": ref})
+		} else {
+			// No $ref at root (simple type) — put it in $defs manually
+			typeName := rt.Name()
+			if typeName == "" {
+				typeName = fmt.Sprintf("Variant%d", len(anyOf))
+			}
+			delete(schema, "$defs")
+			mergedDefs[typeName] = schema
+			anyOf = append(anyOf, map[string]any{"$ref": "#/$defs/" + typeName})
+		}
 	}
 
 	result := map[string]any{"anyOf": anyOf}
