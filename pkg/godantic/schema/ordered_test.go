@@ -21,14 +21,14 @@ type OrderedTypeB struct {
 }
 
 type OrderedNested struct {
-	Name    string          `json:"name"`
-	Details OrderedDetails  `json:"details"`
-	Tags    *[]string       `json:"tags"`
+	Name    string         `json:"name"`
+	Details OrderedDetails `json:"details"`
+	Tags    *[]string      `json:"tags"`
 }
 
 type OrderedDetails struct {
-	Value   string `json:"value"`
-	Count   int    `json:"count"`
+	Value string `json:"value"`
+	Count int    `json:"count"`
 }
 
 func TestGenerateUnionSchemaOrdered(t *testing.T) {
