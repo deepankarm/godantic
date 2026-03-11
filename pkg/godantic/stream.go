@@ -47,7 +47,13 @@ func (sp *StreamParser[T]) Feed(chunk []byte) (*T, *PartialState, ValidationErro
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.buffer = append(sp.buffer, chunk...)
-	return sp.validator.UnmarshalPartial(sp.buffer)
+	// Copy buffer before passing to UnmarshalPartial. The partial JSON
+	// parser repairs truncated strings via append() on sub-slices of the
+	// input, which can write into the shared backing array and corrupt
+	// the buffer for subsequent Feed() calls.
+	data := make([]byte, len(sp.buffer))
+	copy(data, sp.buffer)
+	return sp.validator.UnmarshalPartial(data)
 }
 
 // Reset clears the buffer and starts fresh.
