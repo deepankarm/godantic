@@ -2,6 +2,7 @@ package schema_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/deepankarm/godantic/pkg/godantic"
@@ -91,28 +92,55 @@ func TestGenerateUnionSchema_SingleType(t *testing.T) {
 	}
 }
 
+// resolveRef extracts the type name from a $ref string and looks it up in $defs.
+func resolveRef(t *testing.T, result map[string]any, refItem any) map[string]any {
+	t.Helper()
+	m, ok := refItem.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map in anyOf item, got %T", refItem)
+	}
+	ref, ok := m["$ref"].(string)
+	if !ok {
+		t.Fatalf("expected $ref string in anyOf item, got %v", m)
+	}
+	const prefix = "#/$defs/"
+	if !strings.HasPrefix(ref, prefix) {
+		t.Fatalf("expected $ref with prefix %s, got %s", prefix, ref)
+	}
+	typeName := ref[len(prefix):]
+	defs, ok := result["$defs"].(map[string]any)
+	if !ok {
+		t.Fatal("expected $defs in result")
+	}
+	def, ok := defs[typeName].(map[string]any)
+	if !ok {
+		t.Fatalf("expected %s in $defs", typeName)
+	}
+	return def
+}
+
 func TestGenerateUnionSchema_TwoTypes(t *testing.T) {
 	result, err := schema.GenerateUnionSchema(UnionTypeA{}, UnionTypeB{})
 	if err != nil {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf, ok := result["anyOf"].([]map[string]any)
+	anyOf, ok := result["anyOf"].([]any)
 	if !ok {
-		t.Fatalf("expected anyOf array, got %T", result["anyOf"])
+		t.Fatalf("expected anyOf array ([]any), got %T", result["anyOf"])
 	}
 	if len(anyOf) != 2 {
 		t.Errorf("expected 2 schemas in anyOf, got %d", len(anyOf))
 	}
 
-	// Verify each schema has correct properties
-	schema1 := anyOf[0]
+	// Resolve $ref and verify each schema has correct properties
+	schema1 := resolveRef(t, result, anyOf[0])
 	props1, _ := schema1["properties"].(map[string]any)
 	if _, ok := props1["name"]; !ok {
 		t.Error("first schema should have 'name' property")
 	}
 
-	schema2 := anyOf[1]
+	schema2 := resolveRef(t, result, anyOf[1])
 	props2, _ := schema2["properties"].(map[string]any)
 	if _, ok := props2["id"]; !ok {
 		t.Error("second schema should have 'id' property")
@@ -125,9 +153,9 @@ func TestGenerateUnionSchema_ThreeTypes(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf, ok := result["anyOf"].([]map[string]any)
+	anyOf, ok := result["anyOf"].([]any)
 	if !ok {
-		t.Fatalf("expected anyOf array, got %T", result["anyOf"])
+		t.Fatalf("expected anyOf array ([]any), got %T", result["anyOf"])
 	}
 	if len(anyOf) != 3 {
 		t.Errorf("expected 3 schemas in anyOf, got %d", len(anyOf))
@@ -140,9 +168,9 @@ func TestGenerateUnionSchema_WithNestedTypes(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf, ok := result["anyOf"].([]map[string]any)
+	anyOf, ok := result["anyOf"].([]any)
 	if !ok {
-		t.Fatalf("expected anyOf array, got %T", result["anyOf"])
+		t.Fatalf("expected anyOf array ([]any), got %T", result["anyOf"])
 	}
 	if len(anyOf) != 2 {
 		t.Errorf("expected 2 schemas, got %d", len(anyOf))
@@ -164,13 +192,13 @@ func TestGenerateUnionSchema_WithFieldOptions(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf, ok := result["anyOf"].([]map[string]any)
+	anyOf, ok := result["anyOf"].([]any)
 	if !ok {
-		t.Fatalf("expected anyOf array, got %T", result["anyOf"])
+		t.Fatalf("expected anyOf array ([]any), got %T", result["anyOf"])
 	}
 
-	// First schema (UnionWithOptions) should have constraints
-	optionsSchema := anyOf[0]
+	// First schema (UnionWithOptions) — resolve from $defs
+	optionsSchema := resolveRef(t, result, anyOf[0])
 	props, _ := optionsSchema["properties"].(map[string]any)
 	requiredField, _ := props["required"].(map[string]any)
 
@@ -199,9 +227,10 @@ func TestGenerateUnionSchema_PreservesTypeStructure(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	// Each type in anyOf should be type: object
-	anyOf := result["anyOf"].([]map[string]any)
-	for i, s := range anyOf {
+	// Each type in anyOf should be a $ref; the resolved type should be type: object
+	anyOf := result["anyOf"].([]any)
+	for i, item := range anyOf {
+		s := resolveRef(t, result, item)
 		if s["type"] != "object" {
 			t.Errorf("schema %d should be type: object, got %v", i, s["type"])
 		}
@@ -243,9 +272,9 @@ func TestGenerateUnionSchema_PointerTypes(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf, ok := result["anyOf"].([]map[string]any)
+	anyOf, ok := result["anyOf"].([]any)
 	if !ok {
-		t.Fatalf("expected anyOf array, got %T", result["anyOf"])
+		t.Fatalf("expected anyOf array ([]any), got %T", result["anyOf"])
 	}
 	if len(anyOf) != 2 {
 		t.Errorf("expected 2 schemas, got %d", len(anyOf))
@@ -269,20 +298,22 @@ func TestGenerateUnionSchema_OverlappingFields(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf := result["anyOf"].([]map[string]any)
+	anyOf := result["anyOf"].([]any)
 	if len(anyOf) != 2 {
 		t.Fatalf("expected 2 schemas, got %d", len(anyOf))
 	}
 
 	// First schema: value should be integer
-	propsA := anyOf[0]["properties"].(map[string]any)
+	schemaA := resolveRef(t, result, anyOf[0])
+	propsA := schemaA["properties"].(map[string]any)
 	valueA := propsA["value"].(map[string]any)
 	if valueA["type"] != "integer" {
 		t.Errorf("SameFieldA.Value should be integer, got %v", valueA["type"])
 	}
 
 	// Second schema: value should be string
-	propsB := anyOf[1]["properties"].(map[string]any)
+	schemaB := resolveRef(t, result, anyOf[1])
+	propsB := schemaB["properties"].(map[string]any)
 	valueB := propsB["value"].(map[string]any)
 	if valueB["type"] != "string" {
 		t.Errorf("SameFieldB.Value should be string, got %v", valueB["type"])
@@ -317,13 +348,14 @@ func TestGenerateUnionSchema_APIResponse(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf := result["anyOf"].([]map[string]any)
+	anyOf := result["anyOf"].([]any)
 	if len(anyOf) != 3 {
 		t.Fatalf("expected 3 variants, got %d", len(anyOf))
 	}
 
-	// All should have status field (common discriminator pattern)
-	for i, s := range anyOf {
+	// All resolved types should have status field (common discriminator pattern)
+	for i, item := range anyOf {
+		s := resolveRef(t, result, item)
 		props := s["properties"].(map[string]any)
 		if _, ok := props["status"]; !ok {
 			t.Errorf("schema %d missing status field", i)
@@ -362,7 +394,7 @@ func TestGenerateUnionSchema_SharedNestedTypes(t *testing.T) {
 		t.Fatalf("GenerateUnionSchema failed: %v", err)
 	}
 
-	anyOf := result["anyOf"].([]map[string]any)
+	anyOf := result["anyOf"].([]any)
 	if len(anyOf) != 2 {
 		t.Fatalf("expected 2 schemas, got %d", len(anyOf))
 	}
